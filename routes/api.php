@@ -16,6 +16,6 @@ Route::middleware('auth:sanctum')->group(function () {
 	});
 
 	// Services
-	Route::apiResource('services', ServiceController::class)->middleware('role:admin', ['only' => ['store', 'delete']]);
+	Route::apiResource('services', ServiceController::class);
 	Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
 });

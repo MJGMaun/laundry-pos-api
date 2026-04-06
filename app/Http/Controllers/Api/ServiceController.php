@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use App\Models\Service;
 use App\Services\ServiceService;
 
-class ServiceController extends Controller
+class ServiceController extends Controller implements HasMiddleware
 {
 	protected $serviceService;
 
@@ -71,5 +73,13 @@ class ServiceController extends Controller
 		$updated = $this->serviceService->toggle($service);
 
 		return response()->json($updated);
+	}
+
+	public static function middleware(): array
+	{
+		return [
+			new Middleware('role:admin', only: ['store', 'destroy', 'update', 'toggle']),
+			// new Middleware('role:admin,cashier', only: []),
+		];
 	}
 }
