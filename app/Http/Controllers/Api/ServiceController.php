@@ -28,7 +28,6 @@ class ServiceController extends Controller implements HasMiddleware
 	public function store(Request $request)
 	{
 		$validated = $request->validate([
-			'service_category_id' => 'required|exists:service_categories,id',
 			'name' => 'required|string|max:255',
 			'pricing_type' => 'required|in:per_kilo,per_piece,flat_rate',
 			'price' => 'required|numeric|min:0',
@@ -48,7 +47,6 @@ class ServiceController extends Controller implements HasMiddleware
 	public function update(Request $request, Service $service)
 	{
 		$validated = $request->validate([
-			'service_category_id' => 'sometimes|exists:service_categories,id',
 			'name' => 'sometimes|string|max:255',
 			'pricing_type' => 'sometimes|in:per_kilo,per_piece,flat_rate',
 			'price' => 'sometimes|numeric|min:0',

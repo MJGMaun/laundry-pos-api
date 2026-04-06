@@ -37,37 +37,17 @@ class DefaultDataSeeder extends Seeder
 			],
 		]);
 
-		// ── Service categories ─────────────────────────────
-		$categories = [
-			['name' => 'Wash & Fold',  'sort_order' => 1],
-			['name' => 'Dry Clean',    'sort_order' => 2],
-			['name' => 'Press Only',   'sort_order' => 3],
-			['name' => 'Special Items', 'sort_order' => 4],
-		];
-
-		foreach ($categories as $cat) {
-			DB::table('service_categories')->insert(array_merge($cat, [
-				'is_active'  => true,
-				'created_at' => now(),
-				'updated_at' => now(),
-			]));
-		}
-
 		// ── Sample services ────────────────────────────────
-		$wash_fold_id   = DB::table('service_categories')->where('name', 'Wash & Fold')->value('id');
-		$dry_clean_id   = DB::table('service_categories')->where('name', 'Dry Clean')->value('id');
-		$press_id       = DB::table('service_categories')->where('name', 'Press Only')->value('id');
-		$special_id     = DB::table('service_categories')->where('name', 'Special Items')->value('id');
 
 		$services = [
-			['service_category_id' => $wash_fold_id, 'name' => 'Regular Wash',     'pricing_type' => 'per_kilo',  'price' => 50.00],
-			['service_category_id' => $wash_fold_id, 'name' => 'Beddings',         'pricing_type' => 'per_piece', 'price' => 80.00],
-			['service_category_id' => $dry_clean_id, 'name' => 'Suit / Blazer',    'pricing_type' => 'per_piece', 'price' => 250.00],
-			['service_category_id' => $dry_clean_id, 'name' => 'Dress',            'pricing_type' => 'per_piece', 'price' => 200.00],
-			['service_category_id' => $press_id,     'name' => 'Shirt Press',      'pricing_type' => 'per_piece', 'price' => 30.00],
-			['service_category_id' => $press_id,     'name' => 'Pants Press',      'pricing_type' => 'per_piece', 'price' => 30.00],
-			['service_category_id' => $special_id,   'name' => 'Curtains',         'pricing_type' => 'per_piece', 'price' => 150.00],
-			['service_category_id' => $special_id,   'name' => 'Comforter (Large)', 'pricing_type' => 'flat_rate',  'price' => 350.00],
+			['name' => 'Regular Wash',     'pricing_type' => 'per_kilo',  'price' => 50.00],
+			['name' => 'Beddings',         'pricing_type' => 'per_piece', 'price' => 80.00],
+			['name' => 'Suit / Blazer',    'pricing_type' => 'per_piece', 'price' => 250.00],
+			['name' => 'Dress',            'pricing_type' => 'per_piece', 'price' => 200.00],
+			['name' => 'Shirt Press',      'pricing_type' => 'per_piece', 'price' => 30.00],
+			['name' => 'Pants Press',      'pricing_type' => 'per_piece', 'price' => 30.00],
+			['name' => 'Curtains',         'pricing_type' => 'per_piece', 'price' => 150.00],
+			['name' => 'Comforter (Large)', 'pricing_type' => 'flat_rate',  'price' => 350.00],
 		];
 
 		foreach ($services as $svc) {
