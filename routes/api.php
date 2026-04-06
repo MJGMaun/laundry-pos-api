@@ -9,11 +9,13 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
+	// Auth
 	Route::post('/logout', [AuthController::class, 'logout']);
 	Route::get('/user', function (Request $request) {
 		return $request->user();
 	});
 
-	Route::apiResource('services', ServiceController::class);
+	// Services
+	Route::apiResource('services', ServiceController::class)->middleware('role:admin', ['only' => ['store', 'delete']]);
 	Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
 });
