@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ServiceController;
+use App\Http\Controllers\Api\CustomerController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -18,4 +19,7 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Services
 	Route::apiResource('services', ServiceController::class);
 	Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
+
+	// Customers
+	Route::apiResource('customers', CustomerController::class);
 });
