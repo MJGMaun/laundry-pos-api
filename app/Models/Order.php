@@ -3,14 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
+	use SoftDeletes;
 	protected $fillable = [
 		'customer_id',
 		'user_id',
 		'order_number',
 		'subtotal',
+		'extra_fees',
 		'discount_amount',
 		'total_amount',
 		'status',
@@ -22,6 +25,7 @@ class Order extends Model
 
 	protected $casts = [
 		'subtotal' => 'decimal:2',
+		'extra_fees' => 'decimal:2',
 		'discount_amount' => 'decimal:2',
 		'total_amount' => 'decimal:2',
 		'loyalty_points_earned' => 'integer',
@@ -43,6 +47,11 @@ class Order extends Model
 	public function loads()
 	{
 		return $this->hasMany(Load::class);
+	}
+
+	public function payments()
+	{
+		return $this->hasMany(Payment::class);
 	}
 
 	public function loyaltyTransactions()
