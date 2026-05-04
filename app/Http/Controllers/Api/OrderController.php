@@ -16,6 +16,7 @@ class OrderController extends Controller implements HasMiddleware
 	{
 		return [
 			new Middleware('role:admin,cashier,staff', only: ['store', 'update']),
+			new Middleware('role:admin,cashier', only: ['updateStatus']),
 			new Middleware('role:admin', only: ['destroy'])
 		];
 	}
@@ -128,6 +129,41 @@ class OrderController extends Controller implements HasMiddleware
 			}
 
 			$order->save();
+		});
+
+		return response()->json($order->load(['customer', 'loads', 'payments']));
+	}
+
+	public function updateStatus(Request $request, Order $order)
+	{
+		$validated = $request->validate([
+			'status'             => 'required|in:pending,in_process,ready,completed',
+			'estimated_ready_at' => 'sometimes|nullable|date',
+		]);
+
+		$transitions = [
+			'pending'    => 'in_process',
+			'in_process' => 'ready',
+			'ready'      => 'completed',
+		];
+
+		$next = $transitions[$order->status] ?? null;
+
+		if ($validated['status'] !== $next) {
+			$message = $next
+				? "Order is '{$order->status}', next allowed status is '{$next}'."
+				: "Order is already at its final status '{$order->status}'.";
+
+			return response()->json(['message' => $message], 422);
+		}
+
+		DB::transaction(function () use ($validated, $order) {
+			$order->fill($validated)->save();
+
+			// When order is marked ready, bring all non-final loads up to ready
+			if ($validated['status'] === 'ready') {
+				$order->loads()->where('status', 'in_process')->update(['status' => 'ready']);
+			}
 		});
 
 		return response()->json($order->load(['customer', 'loads', 'payments']));
