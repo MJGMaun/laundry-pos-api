@@ -16,6 +16,7 @@ class OrderController extends Controller implements HasMiddleware
 	{
 		return [
 			new Middleware('role:admin,cashier,staff', only: ['store']),
+			new Middleware('role:admin,cashier', only: ['update']),
 			new Middleware('role:admin', only: ['destroy'])
 		];
 	}
@@ -103,6 +104,34 @@ class OrderController extends Controller implements HasMiddleware
 		return response()->json(
 			$order->load(['customer', 'loads', 'payments', 'user'])
 		);
+	}
+
+	public function update(Request $request, Order $order)
+	{
+		$validated = $request->validate([
+			'discount_amount'    => 'sometimes|numeric|min:0',
+			'extra_fees'         => 'sometimes|numeric|min:0',
+			'notes'              => 'sometimes|nullable|string',
+			'status'             => 'sometimes|in:pending,in_process,ready,completed',
+			'estimated_ready_at' => 'sometimes|nullable|date',
+		]);
+
+		DB::transaction(function () use ($validated, $order) {
+			$recalculate = isset($validated['discount_amount']) || isset($validated['extra_fees']);
+
+			$order->fill($validated);
+
+			if ($recalculate) {
+				$order->total_amount = round(
+					$order->subtotal + $order->extra_fees - $order->discount_amount,
+					2
+				);
+			}
+
+			$order->save();
+		});
+
+		return response()->json($order->load(['customer', 'loads', 'payments']));
 	}
 
 	public function destroy(Order $order)
