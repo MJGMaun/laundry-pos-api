@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\LoadController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ReportsController;
+use App\Http\Controllers\Api\SettingController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -39,6 +40,10 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Expenses
 	Route::apiResource('expenses', ExpenseController::class)->except(['show']);
 	Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'destroy']);
+
+	// Settings
+	Route::get('settings', [SettingController::class, 'index']);
+	Route::put('settings/{key}', [SettingController::class, 'update']);
 
 	// Reports
 	Route::prefix('reports')->group(function () {
