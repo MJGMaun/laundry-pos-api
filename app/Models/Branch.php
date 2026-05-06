@@ -28,9 +28,7 @@ class Branch extends Model
 
 	public function services()
 	{
-		return $this->belongsToMany(Service::class, 'branch_service')
-			->withPivot('price', 'is_active')
-			->withTimestamps();
+		return $this->hasMany(Service::class);
 	}
 
 	public function orders()

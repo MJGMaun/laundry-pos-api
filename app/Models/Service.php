@@ -9,11 +9,17 @@ class Service extends Model
 {
 	use SoftDeletes;
 	protected $fillable = [
+		'branch_id',
 		'name',
 		'pricing_type',
 		'price',
 		'is_active',
 	];
+
+	public function branch()
+	{
+		return $this->belongsTo(Branch::class);
+	}
 
 	protected $casts = [
 		'price' => 'decimal:2',

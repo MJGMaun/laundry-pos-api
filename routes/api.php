@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ReportsController;
 use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\BranchController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -29,6 +30,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
 	// Expense categories (global, not branch-scoped)
 	Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'destroy']);
+
+	// Branches (management — no branch context needed)
+	Route::apiResource('branches', BranchController::class)->except(['show']);
+	Route::get('branches/{branch}/users',                            [BranchController::class, 'users']);
+	Route::post('branches/{branch}/users',                           [BranchController::class, 'assignUser']);
+	Route::delete('branches/{branch}/users/{user}',                  [BranchController::class, 'removeUser']);
+	Route::get('branches/{branch}/services',                         [BranchController::class, 'branchServices']);
+	Route::post('branches/{branch}/services',                        [BranchController::class, 'createBranchService']);
+	Route::put('branches/{branch}/services/{service}',               [BranchController::class, 'updateBranchService']);
+	Route::delete('branches/{branch}/services/{service}',            [BranchController::class, 'deleteBranchService']);
 
 	// Branch-scoped routes
 	Route::middleware('branch')->group(function () {

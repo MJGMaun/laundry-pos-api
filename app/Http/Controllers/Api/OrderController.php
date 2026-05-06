@@ -60,10 +60,11 @@ class OrderController extends Controller implements HasMiddleware
 
 		$order = DB::transaction(function () use ($validated, $request) {
 			$loadsData = [];
-			$subtotal = 0;
+			$subtotal  = 0;
 
 			foreach ($validated['loads'] as $loadInput) {
 				$service = Service::findOrFail($loadInput['service_id']);
+
 				$lineTotal = round($service->price * $loadInput['quantity'], 2);
 				$subtotal += $lineTotal;
 
