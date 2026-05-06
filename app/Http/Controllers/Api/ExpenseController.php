@@ -7,7 +7,6 @@ use App\Models\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Facades\DB;
 
 class ExpenseController extends Controller implements HasMiddleware
 {
@@ -20,48 +19,36 @@ class ExpenseController extends Controller implements HasMiddleware
 
 	public function index(Request $request)
 	{
-		$query = Expense::with('category', 'user');
+		$branchId = $this->branchId($request);
 
-		if ($request->filled('category_id')) {
-			$query->where('expense_category_id', $request->category_id);
-		}
-
-		// ?month=2026-04 shorthand
-		if ($request->filled('month')) {
-			$query->whereYear('expense_date', substr($request->month, 0, 4))
-				->whereMonth('expense_date', substr($request->month, 5, 2));
-		} else {
-			if ($request->filled('date_from')) {
-				$query->whereDate('expense_date', '>=', $request->date_from);
+		$applyFilters = function ($query) use ($request, $branchId) {
+			if ($branchId !== null) {
+				$query->where('branch_id', $branchId);
 			}
 
-			if ($request->filled('date_to')) {
-				$query->whereDate('expense_date', '<=', $request->date_to);
+			if ($request->filled('category_id')) {
+				$query->where('expense_category_id', $request->category_id);
 			}
-		}
 
-		$expenses = $query->orderBy('expense_date', 'desc')->paginate(20);
+			if ($request->filled('month')) {
+				$query->whereYear('expense_date', substr($request->month, 0, 4))
+					->whereMonth('expense_date', substr($request->month, 5, 2));
+			} else {
+				if ($request->filled('date_from')) {
+					$query->whereDate('expense_date', '>=', $request->date_from);
+				}
+				if ($request->filled('date_to')) {
+					$query->whereDate('expense_date', '<=', $request->date_to);
+				}
+			}
+		};
 
-		// Monthly totals for the same filters (without pagination)
+		$expensesQuery = Expense::with('category', 'user');
+		$applyFilters($expensesQuery);
+		$expenses = $expensesQuery->orderBy('expense_date', 'desc')->paginate(20);
+
 		$totalsQuery = Expense::query();
-
-		if ($request->filled('category_id')) {
-			$totalsQuery->where('expense_category_id', $request->category_id);
-		}
-
-		if ($request->filled('month')) {
-			$totalsQuery->whereYear('expense_date', substr($request->month, 0, 4))
-				->whereMonth('expense_date', substr($request->month, 5, 2));
-		} else {
-			if ($request->filled('date_from')) {
-				$totalsQuery->whereDate('expense_date', '>=', $request->date_from);
-			}
-
-			if ($request->filled('date_to')) {
-				$totalsQuery->whereDate('expense_date', '<=', $request->date_to);
-			}
-		}
-
+		$applyFilters($totalsQuery);
 		$monthlyTotals = $totalsQuery
 			->selectRaw("DATE_FORMAT(expense_date, '%Y-%m') as month, SUM(amount) as total")
 			->groupByRaw("DATE_FORMAT(expense_date, '%Y-%m')")
@@ -84,11 +71,13 @@ class ExpenseController extends Controller implements HasMiddleware
 			'receipt_reference'   => 'nullable|string|max:255',
 		]);
 
-		$validated['user_id'] = $request->user()->id;
+		$validated['user_id']   = $request->user()->id;
+		$validated['branch_id'] = $this->branchId($request);
 
-		$expense = Expense::create($validated);
-
-		return response()->json($expense->load('category', 'user'), 201);
+		return response()->json(
+			Expense::create($validated)->load('category', 'user'),
+			201
+		);
 	}
 
 	public function update(Request $request, Expense $expense)

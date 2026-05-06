@@ -25,6 +25,8 @@ class OrderController extends Controller implements HasMiddleware
 	{
 		$query = Order::with(['customer', 'loads']);
 
+		$this->scopeToBranch($query, $request);
+
 		if ($request->has('status')) {
 			$query->where('status', $request->status);
 		}
@@ -80,6 +82,7 @@ class OrderController extends Controller implements HasMiddleware
 			$totalAmount    = round($subtotal + $extraFees - $discountAmount, 2);
 
 			$order = Order::create([
+				'branch_id'        => $this->branchId($request),
 				'customer_id'      => $validated['customer_id'],
 				'user_id'          => $request->user()->id,
 				'order_number'     => $this->generateOrderNumber(),

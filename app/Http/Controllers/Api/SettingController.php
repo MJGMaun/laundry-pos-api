@@ -17,10 +17,6 @@ class SettingController extends Controller implements HasMiddleware
 		];
 	}
 
-	/**
-	 * Known settings: defines the group and validation rules per key.
-	 * Unknown keys fall back to a generic string rule.
-	 */
 	private const REGISTRY = [
 		// shop
 		'shop_name'                 => ['group' => 'shop',    'rules' => 'required|string|max:255'],
@@ -40,30 +36,46 @@ class SettingController extends Controller implements HasMiddleware
 		'printer_name'              => ['group' => 'printer', 'rules' => 'nullable|string|max:255'],
 	];
 
-	// GET /api/settings          → all settings
-	// GET /api/settings?group=shop → filtered by group
+	// GET /api/settings?group=shop
+	// Returns global settings merged with branch overrides (branch wins per key)
 	public function index(Request $request)
 	{
+		$branchId = $this->branchId($request);
+
 		$query = Setting::query();
 
 		if ($request->filled('group')) {
 			$query->where('group', $request->group);
 		}
 
+		// Fetch global settings + branch-specific overrides
+		$query->where(function ($q) use ($branchId) {
+			$q->whereNull('branch_id');
+			if ($branchId) {
+				$q->orWhere('branch_id', $branchId);
+			}
+		});
+
 		$settings = $query->orderBy('group')->orderBy('key')->get();
 
-		// Return as flat key→value map grouped by group for convenience
-		$grouped = $settings->groupBy('group')->map(
+		// Merge: branch-specific setting wins over global for the same key
+		$merged = $settings
+			->groupBy('key')
+			->map(fn($items) => $items->sortByDesc('branch_id')->first())
+			->values();
+
+		$grouped = $merged->groupBy('group')->map(
 			fn($items) => $items->pluck('value', 'key')
 		);
 
 		return response()->json([
-			'settings' => $settings,
+			'settings' => $merged,
 			'grouped'  => $grouped,
 		]);
 	}
 
 	// PUT /api/settings/{key}
+	// Upserts for the current branch context (null branch_id = global)
 	public function update(Request $request, string $key)
 	{
 		$meta  = self::REGISTRY[$key] ?? null;
@@ -71,13 +83,14 @@ class SettingController extends Controller implements HasMiddleware
 
 		$validated = $request->validate(['value' => $rules]);
 
-		// Cast booleans to string for storage
 		$value = is_bool($validated['value'])
 			? ($validated['value'] ? '1' : '0')
 			: (string) $validated['value'];
 
+		$branchId = $this->branchId($request);
+
 		$setting = Setting::updateOrCreate(
-			['key' => $key],
+			['key' => $key, 'branch_id' => $branchId],
 			[
 				'value' => $value,
 				'group' => $meta['group'] ?? $request->input('group', 'general'),

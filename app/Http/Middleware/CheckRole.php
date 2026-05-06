@@ -8,14 +8,20 @@ use Symfony\Component\HttpFoundation\Response;
 
 class CheckRole
 {
-	/**
-	 * Handle an incoming request.
-	 *
-	 * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-	 */
 	public function handle(Request $request, Closure $next, ...$roles): Response
 	{
-		if (!auth()->check() || !in_array(auth()->user()->role, $roles)) {
+		$user = auth()->user();
+
+		if (!$user) {
+			return response()->json(['message' => 'Unauthorized.'], 403);
+		}
+
+		// Super admin bypasses all role restrictions
+		if ($user->isSuperAdmin()) {
+			return $next($request);
+		}
+
+		if (!in_array($user->role, $roles)) {
 			return response()->json(['message' => 'Unauthorized.'], 403);
 		}
 

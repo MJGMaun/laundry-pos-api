@@ -23,14 +23,20 @@ class ReportsController extends Controller implements HasMiddleware
 	// GET /api/reports/sales-summary?date=2026-05-04
 	public function salesSummary(Request $request)
 	{
-		$date = $request->input('date', today()->toDateString());
+		$date     = $request->input('date', today()->toDateString());
+		$branchId = $this->branchId($request);
 
-		$orderIds = Order::whereDate('created_at', $date)
-			->where('status', '!=', 'pending')
-			->pluck('id');
+		$ordersQuery = Order::whereDate('created_at', $date)
+			->where('status', '!=', 'pending');
 
-		$revenue = Order::whereIn('id', $orderIds)->sum('total_amount');
-		$orderCount = $orderIds->count();
+		if ($branchId) {
+			$ordersQuery->where('branch_id', $branchId);
+		}
+
+		$orderIds = $ordersQuery->pluck('id');
+
+		$revenue       = Order::whereIn('id', $orderIds)->sum('total_amount');
+		$orderCount    = $orderIds->count();
 		$avgOrderValue = $orderCount > 0 ? round($revenue / $orderCount, 2) : 0;
 
 		$topService = DB::table('loads')
@@ -43,6 +49,7 @@ class ReportsController extends Controller implements HasMiddleware
 
 		return response()->json([
 			'date'            => $date,
+			'branch_id'       => $branchId,
 			'revenue'         => round($revenue, 2),
 			'order_count'     => $orderCount,
 			'avg_order_value' => $avgOrderValue,
@@ -53,10 +60,11 @@ class ReportsController extends Controller implements HasMiddleware
 		]);
 	}
 
-	// GET /api/reports/revenue?period=monthly&date_from=2026-01-01&date_to=2026-05-04
+	// GET /api/reports/revenue?period=monthly&date_from=&date_to=
 	public function revenue(Request $request)
 	{
-		$period = $request->input('period', 'monthly'); // daily | weekly | monthly
+		$period   = $request->input('period', 'monthly');
+		$branchId = $this->branchId($request);
 
 		$dateFrom = $request->input('date_from', match ($period) {
 			'daily'  => now()->subDays(29)->toDateString(),
@@ -72,9 +80,15 @@ class ReportsController extends Controller implements HasMiddleware
 			default  => '%Y-%m',
 		};
 
-		$data = Order::where('status', '!=', 'pending')
+		$query = Order::where('status', '!=', 'pending')
 			->whereDate('created_at', '>=', $dateFrom)
-			->whereDate('created_at', '<=', $dateTo)
+			->whereDate('created_at', '<=', $dateTo);
+
+		if ($branchId) {
+			$query->where('branch_id', $branchId);
+		}
+
+		$data = $query
 			->selectRaw("DATE_FORMAT(created_at, '{$format}') as period, COUNT(*) as order_count, SUM(total_amount) as revenue")
 			->groupByRaw("DATE_FORMAT(created_at, '{$format}')")
 			->orderBy('period')
@@ -84,6 +98,7 @@ class ReportsController extends Controller implements HasMiddleware
 			'period'    => $period,
 			'date_from' => $dateFrom,
 			'date_to'   => $dateTo,
+			'branch_id' => $branchId,
 			'data'      => $data,
 		]);
 	}
@@ -91,13 +106,18 @@ class ReportsController extends Controller implements HasMiddleware
 	// GET /api/reports/top-customers?limit=10&date_from=&date_to=
 	public function topCustomers(Request $request)
 	{
-		$limit = min((int) $request->input('limit', 10), 50);
+		$limit    = min((int) $request->input('limit', 10), 50);
+		$branchId = $this->branchId($request);
 
 		$query = DB::table('orders')
 			->join('customers', 'orders.customer_id', '=', 'customers.id')
 			->where('orders.status', '!=', 'pending')
 			->whereNull('orders.deleted_at')
 			->whereNull('customers.deleted_at');
+
+		if ($branchId) {
+			$query->where('orders.branch_id', $branchId);
+		}
 
 		if ($request->filled('date_from')) {
 			$query->whereDate('orders.created_at', '>=', $request->date_from);
@@ -117,14 +137,20 @@ class ReportsController extends Controller implements HasMiddleware
 		return response()->json(['data' => $customers]);
 	}
 
-	// GET /api/reports/services?month=2026-04  (or date_from/date_to)
+	// GET /api/reports/services?month=2026-04
 	public function services(Request $request)
 	{
+		$branchId = $this->branchId($request);
+
 		$query = DB::table('loads')
 			->join('orders', 'loads.order_id', '=', 'orders.id')
 			->where('orders.status', '!=', 'pending')
 			->whereNull('loads.deleted_at')
 			->whereNull('orders.deleted_at');
+
+		if ($branchId) {
+			$query->where('orders.branch_id', $branchId);
+		}
 
 		$this->applyDateFilters($query, $request, 'orders.created_at');
 
@@ -137,35 +163,53 @@ class ReportsController extends Controller implements HasMiddleware
 		return response()->json(['data' => $data]);
 	}
 
-	// GET /api/reports/profit-loss?month=2026-04  (or date_from/date_to or year=2026)
+	// GET /api/reports/profit-loss?month=2026-04
 	public function profitLoss(Request $request)
 	{
 		[$dateFrom, $dateTo] = $this->resolveDateRange($request);
+		$branchId = $this->branchId($request);
 
-		$revenue = Order::where('status', '!=', 'pending')
+		$revenueQuery = Order::where('status', '!=', 'pending')
 			->whereDate('created_at', '>=', $dateFrom)
-			->whereDate('created_at', '<=', $dateTo)
-			->sum('total_amount');
+			->whereDate('created_at', '<=', $dateTo);
 
-		$expenseTotal = Expense::whereDate('expense_date', '>=', $dateFrom)
-			->whereDate('expense_date', '<=', $dateTo)
-			->sum('amount');
+		if ($branchId) {
+			$revenueQuery->where('branch_id', $branchId);
+		}
 
-		$expensesByCategory = DB::table('expenses')
+		$revenue = $revenueQuery->sum('total_amount');
+
+		$expenseQuery = Expense::whereDate('expense_date', '>=', $dateFrom)
+			->whereDate('expense_date', '<=', $dateTo);
+
+		if ($branchId) {
+			$expenseQuery->where('branch_id', $branchId);
+		}
+
+		$expenseTotal = $expenseQuery->sum('amount');
+
+		$categoryQuery = DB::table('expenses')
 			->join('expense_categories', 'expenses.expense_category_id', '=', 'expense_categories.id')
 			->whereDate('expenses.expense_date', '>=', $dateFrom)
-			->whereDate('expenses.expense_date', '<=', $dateTo)
+			->whereDate('expenses.expense_date', '<=', $dateTo);
+
+		if ($branchId) {
+			$categoryQuery->where('expenses.branch_id', $branchId);
+		}
+
+		$expensesByCategory = $categoryQuery
 			->selectRaw('expense_categories.name as category, SUM(expenses.amount) as total')
 			->groupBy('expense_categories.name')
 			->orderByDesc('total')
 			->get();
 
-		$netProfit     = $revenue - $expenseTotal;
-		$profitMargin  = $revenue > 0 ? round(($netProfit / $revenue) * 100, 2) : 0;
+		$netProfit    = $revenue - $expenseTotal;
+		$profitMargin = $revenue > 0 ? round(($netProfit / $revenue) * 100, 2) : 0;
 
 		return response()->json([
 			'date_from'         => $dateFrom,
 			'date_to'           => $dateTo,
+			'branch_id'         => $branchId,
 			'revenue'           => round($revenue, 2),
 			'expenses'          => [
 				'total'       => round($expenseTotal, 2),
@@ -187,7 +231,6 @@ class ReportsController extends Controller implements HasMiddleware
 			if ($request->filled('date_from')) {
 				$query->whereDate($column, '>=', $request->date_from);
 			}
-
 			if ($request->filled('date_to')) {
 				$query->whereDate($column, '<=', $request->date_to);
 			}

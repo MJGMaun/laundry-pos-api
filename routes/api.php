@@ -17,48 +17,49 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
-	// Auth
+	// Auth (no branch context needed)
 	Route::post('/logout', [AuthController::class, 'logout']);
 	Route::get('/user', function (Request $request) {
 		return $request->user();
 	});
 
-	// Services
+	// Services (global, not branch-scoped)
 	Route::apiResource('services', ServiceController::class);
 	Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
 
-	// Customers
-	Route::apiResource('customers', CustomerController::class);
-
-	// Orders
-	Route::apiResource('orders', OrderController::class);
-	Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus']);
-
-	// Loads
-	Route::patch('loads/{load}/status', [LoadController::class, 'updateStatus']);
-
-	// Expenses
-	Route::apiResource('expenses', ExpenseController::class)->except(['show']);
+	// Expense categories (global, not branch-scoped)
 	Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'destroy']);
 
-	// Settings
-	Route::get('settings', [SettingController::class, 'index']);
-	Route::put('settings/{key}', [SettingController::class, 'update']);
+	// Branch-scoped routes
+	Route::middleware('branch')->group(function () {
+		// Customers
+		Route::apiResource('customers', CustomerController::class);
 
-	// Reports
-	Route::prefix('reports')->group(function () {
-		Route::get('sales-summary', [ReportsController::class, 'salesSummary']);
-		Route::get('revenue',       [ReportsController::class, 'revenue']);
-		Route::get('top-customers', [ReportsController::class, 'topCustomers']);
-		Route::get('services',      [ReportsController::class, 'services']);
-		Route::get('profit-loss',   [ReportsController::class, 'profitLoss']);
+		// Orders
+		Route::apiResource('orders', OrderController::class);
+		Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus']);
+
+		// Loads
+		Route::patch('loads/{load}/status', [LoadController::class, 'updateStatus']);
+
+		// Expenses
+		Route::apiResource('expenses', ExpenseController::class)->except(['show']);
+
+		// Settings (global with branch override)
+		Route::get('settings', [SettingController::class, 'index']);
+		Route::put('settings/{key}', [SettingController::class, 'update']);
+
+		// Reports
+		Route::prefix('reports')->group(function () {
+			Route::get('sales-summary', [ReportsController::class, 'salesSummary']);
+			Route::get('revenue',       [ReportsController::class, 'revenue']);
+			Route::get('top-customers', [ReportsController::class, 'topCustomers']);
+			Route::get('services',      [ReportsController::class, 'services']);
+			Route::get('profit-loss',   [ReportsController::class, 'profitLoss']);
+		});
+
+		// Payments
+		Route::get('orders/{order}/payments', [PaymentController::class, 'index']);
+		Route::post('orders/{order}/payments', [PaymentController::class, 'store']);
 	});
-
-	// Payments
-	Route::get('orders/{order}/payments', [PaymentController::class, 'index']);
-	Route::post('orders/{order}/payments', [PaymentController::class, 'store']);
-
-	// Route::get('orders', [OrderController::class, 'index']);
-	// Route::post('orders', [OrderController::class, 'store']);
-	// Route::get('orders/{order}', [OrderController::class, 'show']);
 });
