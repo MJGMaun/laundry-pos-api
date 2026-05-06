@@ -9,6 +9,16 @@ class DefaultDataSeeder extends Seeder
 {
 	public function run(): void
 	{
+		// ── Default branch ─────────────────────────────────
+		$branchId = DB::table('branches')->insertGetId([
+			'name'       => 'Main Branch',
+			'address'    => '123 Main St',
+			'phone'      => '09171234567',
+			'is_active'  => true,
+			'created_at' => now(),
+			'updated_at' => now(),
+		]);
+
 		// ── Loyalty tiers ──────────────────────────────────
 		DB::table('loyalty_tiers')->insert([
 			[
@@ -77,7 +87,7 @@ class DefaultDataSeeder extends Seeder
 			]);
 		}
 
-		// ── Default settings ───────────────────────────────
+		// ── Default settings (global — branch_id = null) ──
 		$settings = [
 			// Shop info
 			['key' => 'shop_name',    'value' => 'My Laundry Shop',      'group' => 'shop'],
@@ -94,12 +104,13 @@ class DefaultDataSeeder extends Seeder
 			['key' => 'receipt_footer', 'value' => 'Thank you for choosing us!', 'group' => 'receipt'],
 
 			// Printer
-			['key' => 'printer_type',       'value' => 'usb',           'group' => 'printer'],
-			['key' => 'printer_device_path', 'value' => '/dev/usb/lp0',  'group' => 'printer'],
+			['key' => 'printer_type',        'value' => 'usb',          'group' => 'printer'],
+			['key' => 'printer_device_path',  'value' => '/dev/usb/lp0', 'group' => 'printer'],
 		];
 
 		foreach ($settings as $s) {
 			DB::table('settings')->insert(array_merge($s, [
+				'branch_id'  => null,   // null = global default
 				'created_at' => now(),
 				'updated_at' => now(),
 			]));

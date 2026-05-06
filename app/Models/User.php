@@ -58,6 +58,18 @@ class User extends Authenticatable
 		];
 	}
 
+	public function branches()
+	{
+		return $this->belongsToMany(Branch::class, 'branch_user')
+			->withPivot('is_primary')
+			->withTimestamps();
+	}
+
+	public function isSuperAdmin(): bool
+	{
+		return $this->role === 'super_admin';
+	}
+
 	public function isAdmin(): bool
 	{
 		return $this->role === 'admin';
