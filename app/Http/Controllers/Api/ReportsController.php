@@ -16,6 +16,7 @@ class ReportsController extends Controller implements HasMiddleware
 	public static function middleware(): array
 	{
 		return [
+			new Middleware('role:super_admin', only: ['branchComparison']),
 			new Middleware('role:admin'),
 		];
 	}
@@ -217,6 +218,62 @@ class ReportsController extends Controller implements HasMiddleware
 			],
 			'net_profit'        => round($netProfit, 2),
 			'profit_margin_pct' => $profitMargin,
+		]);
+	}
+
+	// GET /api/reports/branches?month=2026-05
+	// super_admin only — revenue, orders, expenses, and net profit per branch + grand totals
+	public function branchComparison(Request $request)
+	{
+		[$dateFrom, $dateTo] = $this->resolveDateRange($request);
+
+		$revenueRows = DB::table('orders')
+			->join('branches', 'orders.branch_id', '=', 'branches.id')
+			->where('orders.status', '!=', 'pending')
+			->whereNull('orders.deleted_at')
+			->whereDate('orders.created_at', '>=', $dateFrom)
+			->whereDate('orders.created_at', '<=', $dateTo)
+			->selectRaw('branches.id as branch_id, branches.name as branch_name, COUNT(orders.id) as order_count, SUM(orders.total_amount) as revenue')
+			->groupBy('branches.id', 'branches.name')
+			->orderByDesc('revenue')
+			->get();
+
+		$expensesByBranch = DB::table('expenses')
+			->whereNull('deleted_at')
+			->whereDate('expense_date', '>=', $dateFrom)
+			->whereDate('expense_date', '<=', $dateTo)
+			->selectRaw('branch_id, SUM(amount) as expenses')
+			->groupBy('branch_id')
+			->pluck('expenses', 'branch_id');
+
+		$branches = $revenueRows->map(function ($row) use ($expensesByBranch) {
+			$expenses  = (float) ($expensesByBranch[$row->branch_id] ?? 0);
+			$revenue   = (float) $row->revenue;
+			$netProfit = $revenue - $expenses;
+
+			return [
+				'branch_id'   => $row->branch_id,
+				'branch_name' => $row->branch_name,
+				'order_count' => $row->order_count,
+				'revenue'     => round($revenue, 2),
+				'expenses'    => round($expenses, 2),
+				'net_profit'  => round($netProfit, 2),
+			];
+		});
+
+		$totalRevenue  = round($branches->sum('revenue'), 2);
+		$totalExpenses = round($branches->sum('expenses'), 2);
+
+		return response()->json([
+			'date_from' => $dateFrom,
+			'date_to'   => $dateTo,
+			'branches'  => $branches,
+			'totals'    => [
+				'order_count' => $branches->sum('order_count'),
+				'revenue'     => $totalRevenue,
+				'expenses'    => $totalExpenses,
+				'net_profit'  => round($totalRevenue - $totalExpenses, 2),
+			],
 		]);
 	}
 

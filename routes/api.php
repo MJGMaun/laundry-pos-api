@@ -21,7 +21,9 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Auth (no branch context needed)
 	Route::post('/logout', [AuthController::class, 'logout']);
 	Route::get('/user', function (Request $request) {
-		return $request->user();
+		return $request->user()->load(['branches' => function ($q) {
+			$q->withPivot('is_primary');
+		}]);
 	});
 
 	// Services (global, not branch-scoped)
@@ -62,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 		// Reports
 		Route::prefix('reports')->group(function () {
+			Route::get('branches',      [ReportsController::class, 'branchComparison']);
 			Route::get('sales-summary', [ReportsController::class, 'salesSummary']);
 			Route::get('revenue',       [ReportsController::class, 'revenue']);
 			Route::get('top-customers', [ReportsController::class, 'topCustomers']);
