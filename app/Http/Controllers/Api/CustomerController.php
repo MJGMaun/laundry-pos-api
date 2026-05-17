@@ -49,6 +49,7 @@ class CustomerController extends Controller implements HasMiddleware
 			],
 			'email'               => 'nullable|email|unique:customers,email',
 			'address'             => 'nullable|string',
+			'notes'               => 'nullable|string',
 			'loyalty_card_number' => 'nullable|string|unique:customers,loyalty_card_number',
 			'loyalty_tier_id'     => 'nullable|exists:loyalty_tiers,id',
 		]);
@@ -75,6 +76,7 @@ class CustomerController extends Controller implements HasMiddleware
 			],
 			'email'               => 'nullable|email|unique:customers,email,' . $customer->id,
 			'address'             => 'nullable|string',
+			'notes'               => 'nullable|string',
 			'loyalty_card_number' => 'nullable|string|unique:customers,loyalty_card_number,' . $customer->id,
 			'loyalty_tier_id'     => 'nullable|exists:loyalty_tiers,id',
 			'loyalty_points'      => 'sometimes|integer|min:0',

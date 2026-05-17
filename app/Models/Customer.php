@@ -15,6 +15,7 @@ class Customer extends Model
 		'phone',
 		'email',
 		'address',
+		'notes',
 		'loyalty_card_number',
 		'loyalty_tier_id',
 		'loyalty_points',
