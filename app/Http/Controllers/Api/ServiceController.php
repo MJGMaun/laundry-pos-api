@@ -20,7 +20,14 @@ class ServiceController extends Controller implements HasMiddleware
 
 	public function index(Request $request)
 	{
-		$services = $this->serviceService->list($request->all());
+		$filters = $request->all();
+
+		$branchId = $request->header('X-Branch-Id');
+		if ($branchId) {
+			$filters['branch_id'] = $branchId;
+		}
+
+		$services = $this->serviceService->list($filters);
 
 		return response()->json($services);
 	}
@@ -33,6 +40,11 @@ class ServiceController extends Controller implements HasMiddleware
 			'price' => 'required|numeric|min:0',
 			'is_active' => 'boolean',
 		]);
+
+		$branchId = $request->header('X-Branch-Id');
+		if ($branchId) {
+			$validated['branch_id'] = $branchId;
+		}
 
 		$service = $this->serviceService->create($validated);
 

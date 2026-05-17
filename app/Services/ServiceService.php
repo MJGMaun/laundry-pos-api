@@ -10,6 +10,10 @@ class ServiceService
 	{
 		$query = Service::query();
 
+		if (isset($filters['branch_id'])) {
+			$query->where('branch_id', $filters['branch_id']);
+		}
+
 		if (isset($filters['active'])) {
 			$query->where('is_active', $filters['active']);
 		}
