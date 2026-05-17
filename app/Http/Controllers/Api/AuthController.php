@@ -13,17 +13,19 @@ class AuthController extends Controller
 	public function register(Request $request)
 	{
 		$request->validate([
-			'name' => 'required|string|max:255',
-			'email' => 'required|string|email|max:255|unique:users',
+			'name'     => 'required|string|max:255',
+			'username' => 'required|string|max:255|unique:users',
+			'email'    => 'nullable|string|email|max:255|unique:users',
 			'password' => 'required|string|min:8|confirmed',
-			'role' => 'sometimes|string|in:admin,cashier,staff,super_admin',
+			'role'     => 'sometimes|string|in:admin,cashier,staff,super_admin',
 		]);
 
 		$user = User::create([
-			'name' => $request->name,
-			'email' => $request->email,
+			'name'     => $request->name,
+			'username' => $request->username,
+			'email'    => $request->email,
 			'password' => Hash::make($request->password),
-			'role' => $request->role ?? 'staff',
+			'role'     => $request->role ?? 'staff',
 		]);
 
 		$token = $user->createToken('auth_token')->plainTextToken;
@@ -38,15 +40,15 @@ class AuthController extends Controller
 	public function login(Request $request)
 	{
 		$request->validate([
-			'email' => 'required|email',
+			'username' => 'required|string',
 			'password' => 'required',
 		]);
 
-		$user = User::where('email', $request->email)->first();
+		$user = User::where('username', $request->username)->first();
 
 		if (!$user || !Hash::check($request->password, $user->password)) {
 			throw ValidationException::withMessages([
-				'email' => ['The provided credentials are incorrect.'],
+				'username' => ['The provided credentials are incorrect.'],
 			]);
 		}
 

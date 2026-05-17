@@ -83,11 +83,12 @@ class BranchController extends Controller implements HasMiddleware
 	public function users(Branch $branch)
 	{
 		$this->authorizeAdminForBranch($branch);
-		$users = $branch->users()->select('users.id', 'users.name', 'users.email', 'users.role')
+		$users = $branch->users()->select('users.id', 'users.name', 'users.username', 'users.email', 'users.role')
 			->get()
 			->map(fn($u) => [
 				'id'         => $u->id,
 				'name'       => $u->name,
+				'username'   => $u->username,
 				'email'      => $u->email,
 				'role'       => $u->role,
 				'is_primary' => (bool) $u->pivot->is_primary,
