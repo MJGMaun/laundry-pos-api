@@ -43,6 +43,7 @@ class CustomerController extends Controller implements HasMiddleware
 
 		$validated = $request->validate([
 			'name'                => 'required|string|max:255',
+			'username'            => 'nullable|string|max:255',
 			'phone'               => [
 				'required', 'string', 'max:20',
 				Rule::unique('customers', 'phone')->where('branch_id', $branchId),
@@ -70,6 +71,7 @@ class CustomerController extends Controller implements HasMiddleware
 
 		$validated = $request->validate([
 			'name'                => 'sometimes|string|max:255',
+			'username'            => 'nullable|string|max:255',
 			'phone'               => [
 				'sometimes', 'string', 'max:20',
 				Rule::unique('customers', 'phone')->where('branch_id', $branchId)->ignore($customer->id),
