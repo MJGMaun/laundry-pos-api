@@ -146,6 +146,10 @@ class BranchController extends Controller implements HasMiddleware
 	{
 		$this->authorizeAdminForBranch($branch);
 
+		if ($user->isSuperAdmin() && !auth()->user()->isSuperAdmin()) {
+			return response()->json(['message' => 'Only a super admin can remove another super admin.'], 403);
+		}
+
 		$branch->users()->detach($user->id);
 
 		return response()->json(['message' => 'User removed from branch.']);

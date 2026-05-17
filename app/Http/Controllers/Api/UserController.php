@@ -50,12 +50,16 @@ class UserController extends Controller implements HasMiddleware
 	{
 		$contextBranchId = $this->branchId($request);
 
+		$allowedRoles = auth()->user()->isSuperAdmin()
+			? 'in:super_admin,admin,cashier,staff'
+			: 'in:admin,cashier,staff';
+
 		$validated = $request->validate([
 			'name'      => 'required|string|max:255',
 			'username'  => 'required|string|max:255|unique:users',
 			'email'     => 'nullable|email|max:255|unique:users',
 			'password'  => 'required|string|min:8',
-			'role'      => 'required|string|in:super_admin,admin,cashier,staff',
+			'role'      => "required|string|{$allowedRoles}",
 			'branch_id' => 'nullable|exists:branches,id',
 		]);
 
@@ -84,12 +88,20 @@ class UserController extends Controller implements HasMiddleware
 	{
 		$this->authorizeBranchAccess($request, $user);
 
+		if ($user->isSuperAdmin() && !auth()->user()->isSuperAdmin()) {
+			return response()->json(['message' => 'Only a super admin can edit another super admin.'], 403);
+		}
+
+		$allowedRoles = auth()->user()->isSuperAdmin()
+			? 'in:super_admin,admin,cashier,staff'
+			: 'in:admin,cashier,staff';
+
 		$validated = $request->validate([
 			'name'     => 'sometimes|string|max:255',
 			'username' => ['sometimes', 'string', 'max:255', Rule::unique('users')->ignore($user->id)],
 			'email'    => ['nullable', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
 			'password' => 'nullable|string|min:8',
-			'role'     => 'sometimes|string|in:super_admin,admin,cashier,staff',
+			'role'     => "sometimes|string|{$allowedRoles}",
 		]);
 
 		if (!empty($validated['password'])) {
@@ -109,6 +121,10 @@ class UserController extends Controller implements HasMiddleware
 
 		if ($user->id === auth()->id()) {
 			return response()->json(['message' => 'You cannot delete your own account.'], 403);
+		}
+
+		if ($user->isSuperAdmin() && !auth()->user()->isSuperAdmin()) {
+			return response()->json(['message' => 'Only a super admin can delete another super admin.'], 403);
 		}
 
 		$user->delete();
