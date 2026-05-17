@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ExpenseCategoryController;
 use App\Http\Controllers\Api\ReportsController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\UserController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -45,6 +46,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
 	// Branch-scoped routes
 	Route::middleware('branch')->group(function () {
+		// Users
+		Route::apiResource('users', UserController::class);
+
 		// Customers
 		Route::apiResource('customers', CustomerController::class);
 
