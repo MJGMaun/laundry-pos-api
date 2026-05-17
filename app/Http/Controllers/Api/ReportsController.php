@@ -262,7 +262,14 @@ class ReportsController extends Controller implements HasMiddleware
 		});
 
 		$totalRevenue  = round($branches->sum('revenue'), 2);
-		$totalExpenses = round($branches->sum('expenses'), 2);
+		$totalExpenses = round(
+			DB::table('expenses')
+				->whereNull('deleted_at')
+				->whereDate('expense_date', '>=', $dateFrom)
+				->whereDate('expense_date', '<=', $dateTo)
+				->sum('amount'),
+			2
+		);
 
 		return response()->json([
 			'date_from' => $dateFrom,
