@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Service;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -50,6 +51,13 @@ class BranchController extends Controller implements HasMiddleware
 
 		$branch = Branch::create($validated);
 
+		Setting::create([
+			'key'       => 'shop_name',
+			'value'     => $branch->name,
+			'group'     => 'shop',
+			'branch_id' => $branch->id,
+		]);
+
 		return response()->json($branch, 201);
 	}
 
@@ -66,6 +74,14 @@ class BranchController extends Controller implements HasMiddleware
 		]);
 
 		$branch->fill($validated)->save();
+
+		// Keep shop_name setting in sync with branch name
+		if (isset($validated['name'])) {
+			Setting::updateOrCreate(
+				['key' => 'shop_name', 'branch_id' => $branch->id],
+				['value' => $validated['name'], 'group' => 'shop']
+			);
+		}
 
 		return response()->json($branch);
 	}
