@@ -20,7 +20,7 @@ class OrderController extends Controller implements HasMiddleware
 	{
 		return [
 			new Middleware('role:admin,cashier,staff', only: ['store', 'update']),
-			new Middleware('role:admin,cashier', only: ['updateStatus']),
+			new Middleware('role:admin,cashier,staff', only: ['updateStatus']),
 			new Middleware('role:admin', only: ['destroy'])
 		];
 	}

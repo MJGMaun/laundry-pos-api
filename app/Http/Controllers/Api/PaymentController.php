@@ -15,7 +15,7 @@ class PaymentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('role:admin,cashier'),
+            new Middleware('role:admin,cashier,staff'),
         ];
     }
 
