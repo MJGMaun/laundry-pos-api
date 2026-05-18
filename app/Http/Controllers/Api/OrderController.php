@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Service;
+use App\Services\LoyaltyService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller implements HasMiddleware
 {
+	public function __construct(private LoyaltyService $loyaltyService) {}
+
 	public static function middleware(): array
 	{
 		return [
@@ -121,6 +124,8 @@ class OrderController extends Controller implements HasMiddleware
 			]);
 
 			$order->loads()->createMany($loadsData);
+
+			$this->loyaltyService->recordStamps($order->load('loads'));
 
 			return $order;
 		});

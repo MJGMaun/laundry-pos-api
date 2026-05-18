@@ -14,6 +14,8 @@ use App\Http\Controllers\Api\ReportsController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\LoyaltyRuleController;
+use App\Http\Controllers\Api\LoyaltyController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -79,5 +81,10 @@ Route::middleware('auth:sanctum')->group(function () {
 		// Payments
 		Route::get('orders/{order}/payments', [PaymentController::class, 'index']);
 		Route::post('orders/{order}/payments', [PaymentController::class, 'store']);
+
+		// Loyalty
+		Route::apiResource('loyalty-rules', LoyaltyRuleController::class)->except(['show']);
+		Route::get('customers/{customer}/loyalty-rewards', [LoyaltyController::class, 'pendingRewards']);
+		Route::post('loyalty-rewards/{reward}/redeem', [LoyaltyController::class, 'redeemReward']);
 	});
 });
