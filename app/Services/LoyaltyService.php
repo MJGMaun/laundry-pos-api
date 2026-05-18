@@ -16,19 +16,23 @@ class LoyaltyService
             return;
         }
 
-        $loadsCount = $order->loads()->count();
+        $stampsEarned = (int) floor($order->loads()->sum('quantity'));
+
+        if ($stampsEarned <= 0) {
+            return;
+        }
 
         LoyaltyStamp::create([
             'customer_id'   => $order->customer_id,
             'branch_id'     => $order->branch_id,
             'order_id'      => $order->id,
-            'stamps_earned' => $loadsCount,
+            'stamps_earned' => $stampsEarned,
         ]);
 
         $total    = LoyaltyStamp::where('customer_id', $order->customer_id)
                         ->where('branch_id', $order->branch_id)
                         ->sum('stamps_earned');
-        $previous = $total - $loadsCount;
+        $previous = $total - $stampsEarned;
 
         $rules = LoyaltyRule::where('branch_id', $order->branch_id)->active()->get();
 
