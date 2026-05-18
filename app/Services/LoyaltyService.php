@@ -16,34 +16,37 @@ class LoyaltyService
             return;
         }
 
-        $stampsEarned = (int) floor($order->loads()->sum('quantity'));
+        $stamps = (int) floor($order->loads()->sum('quantity'));
 
-        if ($stampsEarned <= 0) {
+        $this->awardStamps($order->customer_id, $order->branch_id, $order->id, $stamps);
+    }
+
+    public function awardStamps(int $customerId, int $branchId, int $orderId, int $stamps): void
+    {
+        if ($stamps <= 0) {
             return;
         }
 
         LoyaltyStamp::create([
-            'customer_id'   => $order->customer_id,
-            'branch_id'     => $order->branch_id,
-            'order_id'      => $order->id,
-            'stamps_earned' => $stampsEarned,
+            'customer_id'   => $customerId,
+            'branch_id'     => $branchId,
+            'order_id'      => $orderId,
+            'stamps_earned' => $stamps,
         ]);
 
-        $total    = LoyaltyStamp::where('customer_id', $order->customer_id)
-                        ->where('branch_id', $order->branch_id)
+        $total    = LoyaltyStamp::where('customer_id', $customerId)
+                        ->where('branch_id', $branchId)
                         ->sum('stamps_earned');
-        $previous = $total - $stampsEarned;
+        $previous = $total - $stamps;
 
-        $rules = LoyaltyRule::where('branch_id', $order->branch_id)->active()->get();
+        foreach (LoyaltyRule::where('branch_id', $branchId)->active()->get() as $rule) {
+            $newRewards = (int) floor($total / $rule->every_n_stamps)
+                        - (int) floor($previous / $rule->every_n_stamps);
 
-        foreach ($rules as $rule) {
-            $prevMilestone = (int) floor($previous / $rule->every_n_stamps);
-            $newMilestone  = (int) floor($total    / $rule->every_n_stamps);
-
-            for ($i = 0; $i < $newMilestone - $prevMilestone; $i++) {
+            for ($i = 0; $i < $newRewards; $i++) {
                 LoyaltyReward::create([
-                    'customer_id' => $order->customer_id,
-                    'branch_id'   => $order->branch_id,
+                    'customer_id' => $customerId,
+                    'branch_id'   => $branchId,
                     'rule_id'     => $rule->id,
                     'earned_at'   => now(),
                 ]);

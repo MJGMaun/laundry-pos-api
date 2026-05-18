@@ -59,6 +59,7 @@ Route::middleware('auth:sanctum')->group(function () {
 		Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus']);
 
 		// Loads
+		Route::post('orders/{order}/loads', [LoadController::class, 'store']);
 		Route::patch('loads/{load}/status', [LoadController::class, 'updateStatus']);
 
 		// Expenses
