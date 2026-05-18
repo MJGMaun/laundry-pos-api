@@ -66,4 +66,11 @@ class Order extends Model
 	{
 		return $query->where('status', 'pending');
 	}
+
+	public function scopeUnpaid($query)
+	{
+		return $query->whereRaw(
+			'COALESCE((SELECT SUM(amount) FROM payments WHERE payments.order_id = orders.id), 0) < total_amount'
+		);
+	}
 }

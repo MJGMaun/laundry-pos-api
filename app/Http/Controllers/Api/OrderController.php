@@ -39,6 +39,10 @@ class OrderController extends Controller implements HasMiddleware
 			$query->where('customer_id', $request->customer_id);
 		}
 
+		if ($request->boolean('unpaid')) {
+			$query->unpaid();
+		}
+
 		$orders = $query->latest()->paginate(15);
 
 		return response()->json($orders);
