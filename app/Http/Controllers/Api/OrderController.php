@@ -31,8 +31,20 @@ class OrderController extends Controller implements HasMiddleware
 			$query->where('status', $request->status);
 		}
 
-		if ($request->has('date')) {
-			$query->whereDate('created_at', $request->date);
+		if ($request->filled('search')) {
+			$search = $request->search;
+			$query->where(function ($q) use ($search) {
+				$q->where('order_number', 'like', "%{$search}%")
+				  ->orWhereHas('customer', fn($cq) => $cq->where('name', 'like', "%{$search}%"));
+			});
+		}
+
+		if ($request->filled('date_from')) {
+			$query->whereDate('created_at', '>=', $request->date_from);
+		}
+
+		if ($request->filled('date_to')) {
+			$query->whereDate('created_at', '<=', $request->date_to);
 		}
 
 		if ($request->has('customer_id')) {
