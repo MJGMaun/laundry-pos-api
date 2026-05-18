@@ -51,12 +51,16 @@ class BranchController extends Controller implements HasMiddleware
 
 		$branch = Branch::create($validated);
 
-		Setting::create([
-			'key'       => 'shop_name',
-			'value'     => $branch->name,
-			'group'     => 'shop',
-			'branch_id' => $branch->id,
-		]);
+		$seedSettings = [
+			'shop_name'    => $branch->name,
+			'shop_address' => $branch->address ?? '',
+			'shop_phone'   => $branch->phone   ?? '',
+			'shop_email'   => $branch->email   ?? '',
+		];
+
+		foreach ($seedSettings as $key => $value) {
+			Setting::create(['key' => $key, 'value' => (string) $value, 'group' => 'shop', 'branch_id' => $branch->id]);
+		}
 
 		return response()->json($branch, 201);
 	}
@@ -75,12 +79,20 @@ class BranchController extends Controller implements HasMiddleware
 
 		$branch->fill($validated)->save();
 
-		// Keep shop_name setting in sync with branch name
-		if (isset($validated['name'])) {
-			Setting::updateOrCreate(
-				['key' => 'shop_name', 'branch_id' => $branch->id],
-				['value' => $validated['name'], 'group' => 'shop']
-			);
+		$settingMap = [
+			'name'    => 'shop_name',
+			'address' => 'shop_address',
+			'phone'   => 'shop_phone',
+			'email'   => 'shop_email',
+		];
+
+		foreach ($settingMap as $col => $key) {
+			if (isset($validated[$col])) {
+				Setting::updateOrCreate(
+					['key' => $key, 'branch_id' => $branch->id],
+					['value' => (string) ($validated[$col] ?? ''), 'group' => 'shop']
+				);
+			}
 		}
 
 		return response()->json($branch);

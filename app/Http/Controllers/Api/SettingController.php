@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -96,6 +97,17 @@ class SettingController extends Controller implements HasMiddleware
 				'group' => $meta['group'] ?? $request->input('group', 'general'),
 			]
 		);
+
+		$branchColumnMap = [
+			'shop_name'    => 'name',
+			'shop_address' => 'address',
+			'shop_phone'   => 'phone',
+			'shop_email'   => 'email',
+		];
+
+		if ($branchId && isset($branchColumnMap[$key])) {
+			Branch::where('id', $branchId)->update([$branchColumnMap[$key] => $value ?: null]);
+		}
 
 		return response()->json($setting);
 	}

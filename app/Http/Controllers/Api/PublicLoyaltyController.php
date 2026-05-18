@@ -32,7 +32,7 @@ class PublicLoyaltyController extends Controller
             ->latest('earned_at')
             ->get(['id', 'rule_id', 'earned_at']);
 
-        $branch = Branch::find($branchId, ['name', 'address']);
+        $branch = Branch::find($branchId, ['name', 'address', 'phone', 'email']);
 
         return response()->json([
             'customer' => [
