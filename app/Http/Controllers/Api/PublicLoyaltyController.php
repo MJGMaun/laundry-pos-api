@@ -11,8 +11,9 @@ use App\Models\LoyaltyStamp;
 
 class PublicLoyaltyController extends Controller
 {
-    public function show(Customer $customer)
+    public function show(string $username)
     {
+        $customer = Customer::where('username', $username)->firstOrFail();
         $branchId = $customer->branch_id;
 
         $totalStamps = (int) LoyaltyStamp::where('customer_id', $customer->id)
