@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\LoyaltyReward;
 use App\Models\Order;
 use App\Models\Service;
 use App\Services\LoyaltyService;
@@ -126,6 +127,19 @@ class OrderController extends Controller implements HasMiddleware
 			$order->loads()->createMany($loadsData);
 
 			$this->loyaltyService->recordStamps($order->load('loads'));
+
+			if ($discountAmount > 0 && $order->customer_id) {
+				$reward = LoyaltyReward::where('customer_id', $order->customer_id)
+					->where('branch_id', $order->branch_id)
+					->whereNull('redeemed_at')
+					->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
+					->latest('earned_at')
+					->first();
+
+				if ($reward) {
+					$this->loyaltyService->redeemReward($reward, $order->id);
+				}
+			}
 
 			return $order;
 		});
