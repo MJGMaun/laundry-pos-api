@@ -16,9 +16,11 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\LoyaltyRuleController;
 use App\Http\Controllers\Api\LoyaltyController;
+use App\Http\Controllers\Api\PublicLoyaltyController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/public/customer/{customer}/loyalty', [PublicLoyaltyController::class, 'show']);
 
 Route::middleware('auth:sanctum')->group(function () {
 	// Auth (no branch context needed)
