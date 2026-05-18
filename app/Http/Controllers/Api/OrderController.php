@@ -47,6 +47,7 @@ class OrderController extends Controller implements HasMiddleware
 	public function store(Request $request)
 	{
 		$validated = $request->validate([
+			'client_id'            => 'nullable|string|max:36',
 			'customer_id'          => 'required|exists:customers,id',
 			'loads'                => 'required|array|min:1',
 			'loads.*.service_id'   => 'required|exists:services,id',
@@ -57,6 +58,13 @@ class OrderController extends Controller implements HasMiddleware
 			'notes'                => 'nullable|string',
 			'estimated_ready_at'   => 'nullable|date',
 		]);
+
+		if (!empty($validated['client_id'])) {
+			$existing = Order::where('client_id', $validated['client_id'])->first();
+			if ($existing) {
+				return response()->json($existing->load(['customer', 'loads']), 200);
+			}
+		}
 
 		$order = DB::transaction(function () use ($validated, $request) {
 			$loadsData = [];
@@ -84,6 +92,7 @@ class OrderController extends Controller implements HasMiddleware
 
 			$order = Order::create([
 				'branch_id'        => $this->branchId($request),
+				'client_id'        => $validated['client_id'] ?? null,
 				'customer_id'      => $validated['customer_id'],
 				'user_id'          => $request->user()->id,
 				'order_number'     => $this->generateOrderNumber(),

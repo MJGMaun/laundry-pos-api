@@ -34,7 +34,13 @@ class CustomerController extends Controller implements HasMiddleware
 			});
 		}
 
-		return response()->json($query->latest()->paginate(15));
+		if ($request->has('updated_after')) {
+			$query->where('updated_at', '>', $request->updated_after);
+		}
+
+		$perPage = min((int) ($request->per_page ?? 15), 500);
+
+		return response()->json($query->latest()->paginate($perPage));
 	}
 
 	public function store(Request $request)
