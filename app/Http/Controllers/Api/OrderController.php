@@ -75,6 +75,7 @@ class OrderController extends Controller implements HasMiddleware
 			'loads.*.notes'        => 'nullable|string',
 			'extra_fees'           => 'nullable|numeric|min:0',
 			'discount_amount'      => 'nullable|numeric|min:0',
+			'loyalty_free_loads'   => 'nullable|integer|min:0',
 			'notes'                => 'nullable|string',
 			'estimated_ready_at'   => 'nullable|date',
 		]);
@@ -128,17 +129,16 @@ class OrderController extends Controller implements HasMiddleware
 
 			$this->loyaltyService->recordStamps($order->load('loads'));
 
-			if ($discountAmount > 0 && $order->customer_id) {
-				$reward = LoyaltyReward::where('customer_id', $order->customer_id)
+			$freeLoadsToRedeem = (int) ($validated['loyalty_free_loads'] ?? 0);
+			if ($freeLoadsToRedeem > 0 && $order->customer_id) {
+				LoyaltyReward::where('customer_id', $order->customer_id)
 					->where('branch_id', $order->branch_id)
 					->whereNull('redeemed_at')
 					->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
 					->latest('earned_at')
-					->first();
-
-				if ($reward) {
-					$this->loyaltyService->redeemReward($reward, $order->id);
-				}
+					->limit($freeLoadsToRedeem)
+					->get()
+					->each(fn($r) => $this->loyaltyService->redeemReward($r, $order->id));
 			}
 
 			return $order;
