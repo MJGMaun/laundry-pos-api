@@ -129,7 +129,7 @@ class ReportsController extends Controller implements HasMiddleware
 		}
 
 		$customers = $query
-			->selectRaw('customers.id, customers.name, customers.phone, COUNT(orders.id) as order_count, SUM(orders.total_amount) as total_spent')
+			->selectRaw('customers.id, customers.name, customers.phone, COUNT(orders.id) as total_visits, SUM(orders.total_amount) as total_spent')
 			->groupBy('customers.id', 'customers.name', 'customers.phone')
 			->orderByDesc('total_spent')
 			->limit($limit)
