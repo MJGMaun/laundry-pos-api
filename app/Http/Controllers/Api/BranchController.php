@@ -171,7 +171,7 @@ class BranchController extends Controller implements HasMiddleware
 	public function branchServices(Branch $branch)
 	{
 		$this->authorizeAdminForBranch($branch);
-		$services = $branch->services()->whereNull('deleted_at')->get();
+		$services = $branch->services()->with('category')->whereNull('deleted_at')->get();
 
 		return response()->json(['data' => $services]);
 	}

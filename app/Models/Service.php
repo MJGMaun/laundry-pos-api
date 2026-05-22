@@ -11,6 +11,7 @@ class Service extends Model
 	protected $fillable = [
 		'branch_id',
 		'name',
+		'category_id',
 		'pricing_type',
 		'price',
 		'is_active',
@@ -19,6 +20,11 @@ class Service extends Model
 	public function branch()
 	{
 		return $this->belongsTo(Branch::class);
+	}
+
+	public function category()
+	{
+		return $this->belongsTo(ServiceCategory::class, 'category_id');
 	}
 
 	protected $casts = [

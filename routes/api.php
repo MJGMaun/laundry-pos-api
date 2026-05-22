@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\ReportsController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\ServiceCategoryController;
 use App\Http\Controllers\Api\LoyaltyRuleController;
 use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
@@ -34,6 +35,9 @@ Route::middleware('auth:sanctum')->group(function () {
 	// Services (global, not branch-scoped)
 	Route::apiResource('services', ServiceController::class);
 	Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
+
+	// Service categories (global)
+	Route::apiResource('service-categories', ServiceCategoryController::class)->except(['show']);
 
 	// Expense categories (global, not branch-scoped)
 	Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'destroy']);

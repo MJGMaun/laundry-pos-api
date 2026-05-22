@@ -8,7 +8,7 @@ class ServiceService
 {
 	public function list($filters = [])
 	{
-		$query = Service::query();
+		$query = Service::with('category');
 
 		if (isset($filters['branch_id'])) {
 			$query->where('branch_id', $filters['branch_id']);
