@@ -16,7 +16,13 @@ class LoyaltyService
             return;
         }
 
-        $stamps = (int) floor($order->loads()->sum('quantity'));
+        $loads = $order->loads()->with('service')->get();
+
+        // Count stamps only from eligible services; ineligible ones contribute 0 but don't block
+        $stamps = (int) floor(
+            $loads->filter(fn($l) => $l->service && $l->service->is_loyalty_eligible)
+                  ->sum('quantity')
+        );
 
         $this->awardStamps($order->customer_id, $order->branch_id, $order->id, $stamps);
     }

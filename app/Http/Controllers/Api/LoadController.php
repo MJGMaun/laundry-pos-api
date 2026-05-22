@@ -37,13 +37,18 @@ class LoadController extends Controller implements HasMiddleware
 		]);
 
 		DB::transaction(function () use ($validated, $order) {
-			$loadsData  = [];
-			$addedTotal = 0;
+			$loadsData          = [];
+			$addedTotal         = 0;
+			$eligibleNewStamps  = 0.0;
 
 			foreach ($validated['loads'] as $loadInput) {
 				$service   = Service::findOrFail($loadInput['service_id']);
 				$lineTotal = round($service->price * $loadInput['quantity'], 2);
 				$addedTotal += $lineTotal;
+
+				if ($service->is_loyalty_eligible) {
+					$eligibleNewStamps += $loadInput['quantity'];
+				}
 
 				$loadsData[] = [
 					'service_id'            => $service->id,
@@ -62,8 +67,10 @@ class LoadController extends Controller implements HasMiddleware
 			$order->save();
 
 			if ($order->customer_id) {
-				$newStamps = (int) floor(collect($validated['loads'])->sum('quantity'));
-				$this->loyaltyService->awardStamps($order->customer_id, $order->branch_id, $order->id, $newStamps);
+				$this->loyaltyService->awardStamps(
+					$order->customer_id, $order->branch_id, $order->id,
+					(int) floor($eligibleNewStamps)
+				);
 			}
 		});
 

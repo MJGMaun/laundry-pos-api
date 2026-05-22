@@ -40,6 +40,7 @@ class ServiceController extends Controller implements HasMiddleware
 			'pricing_type' => 'required|in:per_kilo,per_piece,flat_rate',
 			'price' => 'required|numeric|min:0',
 			'is_active' => 'boolean',
+			'is_loyalty_eligible' => 'boolean',
 		]);
 
 		$branchId = $request->header('X-Branch-Id');
@@ -65,6 +66,7 @@ class ServiceController extends Controller implements HasMiddleware
 			'pricing_type' => 'sometimes|in:per_kilo,per_piece,flat_rate',
 			'price' => 'sometimes|numeric|min:0',
 			'is_active' => 'boolean',
+			'is_loyalty_eligible' => 'boolean',
 		]);
 
 		$updated = $this->serviceService->update($service, $validated);

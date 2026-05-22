@@ -15,6 +15,7 @@ class Service extends Model
 		'pricing_type',
 		'price',
 		'is_active',
+		'is_loyalty_eligible',
 	];
 
 	public function branch()
@@ -30,6 +31,7 @@ class Service extends Model
 	protected $casts = [
 		'price' => 'decimal:2',
 		'is_active' => 'boolean',
+		'is_loyalty_eligible' => 'boolean',
 	];
 
 	// Scopes

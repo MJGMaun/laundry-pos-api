@@ -184,7 +184,8 @@ class BranchController extends Controller implements HasMiddleware
 			'name'         => 'required|string|max:255',
 			'pricing_type' => 'required|in:per_kilo,per_piece,flat_rate',
 			'price'        => 'required|numeric|min:0',
-			'is_active'    => 'sometimes|boolean',
+			'is_active'          => 'sometimes|boolean',
+			'is_loyalty_eligible' => 'sometimes|boolean',
 		]);
 
 		$service = $branch->services()->create($validated);
