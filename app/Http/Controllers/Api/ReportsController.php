@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Expense;
 use App\Models\Order;
 use Carbon\Carbon;
@@ -32,6 +33,8 @@ class ReportsController extends Controller implements HasMiddleware
 
 		if ($branchId) {
 			$ordersQuery->where('branch_id', $branchId);
+		} else {
+			$ordersQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
 		}
 
 		$orderIds = $ordersQuery->pluck('id');
@@ -87,6 +90,8 @@ class ReportsController extends Controller implements HasMiddleware
 
 		if ($branchId) {
 			$query->where('branch_id', $branchId);
+		} else {
+			$query->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
 		}
 
 		$data = $query
@@ -118,6 +123,8 @@ class ReportsController extends Controller implements HasMiddleware
 
 		if ($branchId) {
 			$query->where('orders.branch_id', $branchId);
+		} else {
+			$query->whereNotIn('orders.branch_id', Branch::where('is_test', true)->pluck('id'));
 		}
 
 		if ($request->filled('date_from')) {
@@ -151,6 +158,8 @@ class ReportsController extends Controller implements HasMiddleware
 
 		if ($branchId) {
 			$query->where('orders.branch_id', $branchId);
+		} else {
+			$query->whereNotIn('orders.branch_id', Branch::where('is_test', true)->pluck('id'));
 		}
 
 		$this->applyDateFilters($query, $request, 'orders.created_at');
@@ -176,15 +185,21 @@ class ReportsController extends Controller implements HasMiddleware
 
 		if ($branchId) {
 			$revenueQuery->where('branch_id', $branchId);
+		} else {
+			$revenueQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
 		}
 
 		$revenue = $revenueQuery->sum('total_amount');
+
+		$testBranchIds = Branch::where('is_test', true)->pluck('id');
 
 		$expenseQuery = Expense::whereDate('expense_date', '>=', $dateFrom)
 			->whereDate('expense_date', '<=', $dateTo);
 
 		if ($branchId) {
 			$expenseQuery->where('branch_id', $branchId);
+		} else {
+			$expenseQuery->whereNotIn('branch_id', $testBranchIds);
 		}
 
 		$expenseTotal = $expenseQuery->sum('amount');
@@ -196,6 +211,8 @@ class ReportsController extends Controller implements HasMiddleware
 
 		if ($branchId) {
 			$categoryQuery->where('expenses.branch_id', $branchId);
+		} else {
+			$categoryQuery->whereNotIn('expenses.branch_id', $testBranchIds);
 		}
 
 		$expensesByCategory = $categoryQuery
@@ -229,6 +246,7 @@ class ReportsController extends Controller implements HasMiddleware
 
 		$revenueRows = DB::table('orders')
 			->join('branches', 'orders.branch_id', '=', 'branches.id')
+			->where('branches.is_test', false)
 			->where('orders.status', '!=', 'pending')
 			->whereNull('orders.deleted_at')
 			->whereDate('orders.created_at', '>=', $dateFrom)
@@ -239,11 +257,13 @@ class ReportsController extends Controller implements HasMiddleware
 			->get();
 
 		$expensesByBranch = DB::table('expenses')
-			->whereNull('deleted_at')
-			->whereDate('expense_date', '>=', $dateFrom)
-			->whereDate('expense_date', '<=', $dateTo)
-			->selectRaw('branch_id, SUM(amount) as expenses')
-			->groupBy('branch_id')
+			->join('branches', 'expenses.branch_id', '=', 'branches.id')
+			->where('branches.is_test', false)
+			->whereNull('expenses.deleted_at')
+			->whereDate('expenses.expense_date', '>=', $dateFrom)
+			->whereDate('expenses.expense_date', '<=', $dateTo)
+			->selectRaw('expenses.branch_id, SUM(expenses.amount) as expenses')
+			->groupBy('expenses.branch_id')
 			->pluck('expenses', 'branch_id');
 
 		$branches = $revenueRows->map(function ($row) use ($expensesByBranch) {
@@ -264,10 +284,12 @@ class ReportsController extends Controller implements HasMiddleware
 		$totalRevenue  = round($branches->sum('revenue'), 2);
 		$totalExpenses = round(
 			DB::table('expenses')
-				->whereNull('deleted_at')
-				->whereDate('expense_date', '>=', $dateFrom)
-				->whereDate('expense_date', '<=', $dateTo)
-				->sum('amount'),
+				->join('branches', 'expenses.branch_id', '=', 'branches.id')
+				->where('branches.is_test', false)
+				->whereNull('expenses.deleted_at')
+				->whereDate('expenses.expense_date', '>=', $dateFrom)
+				->whereDate('expenses.expense_date', '<=', $dateTo)
+				->sum('expenses.amount'),
 			2
 		);
 

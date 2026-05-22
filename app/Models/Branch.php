@@ -13,10 +13,12 @@ class Branch extends Model
 		'email',
 		'tin',
 		'is_active',
+		'is_test',
 	];
 
 	protected $casts = [
 		'is_active' => 'boolean',
+		'is_test'   => 'boolean',
 	];
 
 	public function users()

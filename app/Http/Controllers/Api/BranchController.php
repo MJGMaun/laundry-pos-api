@@ -47,6 +47,7 @@ class BranchController extends Controller implements HasMiddleware
 			'phone'   => 'nullable|string|max:20',
 			'email'   => 'nullable|email|max:255',
 			'tin'     => 'nullable|string|max:50',
+			'is_test' => 'sometimes|boolean',
 		]);
 
 		$branch = Branch::create($validated);
@@ -75,6 +76,7 @@ class BranchController extends Controller implements HasMiddleware
 			'email'     => 'sometimes|nullable|email|max:255',
 			'tin'       => 'sometimes|nullable|string|max:50',
 			'is_active' => 'sometimes|boolean',
+			'is_test'   => 'sometimes|boolean',
 		]);
 
 		$branch->fill($validated)->save();
