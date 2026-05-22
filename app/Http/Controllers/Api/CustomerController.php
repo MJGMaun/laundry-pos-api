@@ -63,6 +63,17 @@ class CustomerController extends Controller implements HasMiddleware
 
 		$validated['branch_id'] = $branchId;
 
+		// Auto-generate username from name if not provided
+		$base     = strtolower(preg_replace('/\s+/', '', $validated['name']));
+		$username = !empty($validated['username']) ? $validated['username'] : $base;
+
+		// Ensure uniqueness by appending random digits if already taken
+		$candidate = $username;
+		while (Customer::where('username', $candidate)->exists()) {
+			$candidate = $username . rand(100, 999);
+		}
+		$validated['username'] = $candidate;
+
 		return response()->json(Customer::create($validated), 201);
 	}
 
