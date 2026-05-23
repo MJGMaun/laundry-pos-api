@@ -21,7 +21,7 @@ class OrderController extends Controller implements HasMiddleware
 		return [
 			new Middleware('role:admin,cashier,staff', only: ['store', 'update']),
 			new Middleware('role:admin,cashier,staff', only: ['updateStatus']),
-			new Middleware('role:admin', only: ['destroy'])
+			new Middleware('role:admin,cashier,staff', only: ['destroy'])
 		];
 	}
 
@@ -219,12 +219,23 @@ class OrderController extends Controller implements HasMiddleware
 
 	public function destroy(Order $order)
 	{
+		$user = request()->user();
+
+		if (! in_array($user->role, ['super_admin', 'admin'])) {
+			if ($order->created_at->diffInMinutes(now()) > 15) {
+				return response()->json([
+					'message' => 'Orders can only be deleted within 15 minutes of creation.',
+				], 403);
+			}
+		}
+
 		DB::transaction(function () use ($order) {
 			$order->loads()->each(fn($load) => $load->delete());
+			$order->payments()->delete();
 			$order->delete();
 		});
 
-		return response()->json(['message' => 'Deleted successfully']);
+		return response()->json(['message' => 'Order deleted.']);
 	}
 
 	private function generateOrderNumber(): string
