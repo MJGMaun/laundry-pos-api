@@ -7,6 +7,7 @@ use App\Models\LoyaltyReward;
 use App\Models\Order;
 use App\Models\Service;
 use App\Services\LoyaltyService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -87,7 +88,35 @@ class OrderController extends Controller implements HasMiddleware
 			}
 		}
 
-		$order = DB::transaction(function () use ($validated, $request) {
+		$attempt = 0;
+		$order   = null;
+		while (true) {
+			try {
+				$order = $this->attemptCreateOrder($validated, $request);
+				break;
+			} catch (QueryException $e) {
+				// MySQL 1062 = duplicate entry — order number collision, retry
+				if ($e->errorInfo[1] === 1062 && ++$attempt < 5) {
+					usleep(random_int(10_000, 80_000)); // 10–80 ms jitter
+					continue;
+				}
+				throw $e;
+			}
+		}
+
+		return response()->json($order->load(['customer', 'loads']), 201);
+	}
+
+	private function attemptCreateOrder(array $validated, Request $request): Order
+	{
+		// Advisory lock serialises order-number generation across concurrent requests.
+		// GET_LOCK is connection-level (not transaction-level), so it truly blocks
+		// other requests until this one commits and releases.
+		$lockName = 'laundry_order_number_' . now()->format('Ymd');
+		DB::statement("SELECT GET_LOCK('{$lockName}', 10)");
+
+		try {
+			return DB::transaction(function () use ($validated, $request) {
 			$loadsData = [];
 			$subtotal  = 0;
 
@@ -143,8 +172,9 @@ class OrderController extends Controller implements HasMiddleware
 
 			return $order;
 		});
-
-		return response()->json($order->load(['customer', 'loads']), 201);
+		} finally {
+			DB::statement("SELECT RELEASE_LOCK('{$lockName}')");
+		}
 	}
 
 	public function show(Order $order)
@@ -243,12 +273,17 @@ class OrderController extends Controller implements HasMiddleware
 		$date   = now()->format('Ymd');
 		$prefix = "ORD-{$date}-";
 
-		$last = Order::where('order_number', 'like', "{$prefix}%")
+		// withTrashed() ensures soft-deleted order numbers are still counted —
+		// their rows stay in the table and hold the unique constraint.
+		$last = Order::withTrashed()
+			->where('order_number', 'like', "{$prefix}%")
 			->orderBy('order_number', 'desc')
-			->lockForUpdate()
 			->first();
 
-		$sequence = $last ? ((int) substr($last->order_number, -3)) + 1 : 1;
+		// Use strlen($prefix) offset, not -3, so sequences past 999 extract correctly.
+		$sequence = $last
+			? (int) substr($last->order_number, strlen($prefix)) + 1
+			: 1;
 
 		return $prefix . str_pad($sequence, 3, '0', STR_PAD_LEFT);
 	}
