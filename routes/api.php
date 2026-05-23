@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ServiceCategoryController;
 use App\Http\Controllers\Api\LoyaltyRuleController;
+use App\Http\Controllers\Api\CashBalanceController;
 use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
 
@@ -73,6 +74,10 @@ Route::middleware('auth:sanctum')->group(function () {
 		// Settings (global with branch override)
 		Route::get('settings', [SettingController::class, 'index']);
 		Route::put('settings/{key}', [SettingController::class, 'update']);
+
+		// Cash balance
+		Route::get('cash-balance',  [CashBalanceController::class, 'show']);
+		Route::post('cash-balance', [CashBalanceController::class, 'store']);
 
 		// Reports
 		Route::prefix('reports')->group(function () {
