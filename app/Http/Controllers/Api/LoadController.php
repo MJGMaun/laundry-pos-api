@@ -98,6 +98,20 @@ class LoadController extends Controller implements HasMiddleware
 			return response()->json(['message' => $message], 422);
 		}
 
+		// Block pickup if the order still has an outstanding balance
+		if ($validated['status'] === 'picked_up') {
+			$order   = $load->order;
+			$paid    = $order->payments()->where('type', 'payment')->sum('amount')
+			         - $order->payments()->where('type', 'refund')->sum('amount');
+			$balance = round($order->total_amount - $paid, 2);
+
+			if ($balance > 0) {
+				return response()->json([
+					'message' => "Cannot mark as picked up — order has an outstanding balance of ₱{$balance}.",
+				], 422);
+			}
+		}
+
 		DB::transaction(function () use ($validated, $load) {
 			$load->status = $validated['status'];
 			$load->save();
