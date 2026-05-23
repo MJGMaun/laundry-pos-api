@@ -66,7 +66,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
 		// Loads
 		Route::post('orders/{order}/loads', [LoadController::class, 'store']);
-		Route::patch('loads/{load}/status', [LoadController::class, 'updateStatus']);
 
 		// Expenses
 		Route::apiResource('expenses', ExpenseController::class)->except(['show']);

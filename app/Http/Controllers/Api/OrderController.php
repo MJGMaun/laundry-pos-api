@@ -190,7 +190,7 @@ class OrderController extends Controller implements HasMiddleware
 			'discount_amount'    => 'sometimes|numeric|min:0',
 			'extra_fees'         => 'sometimes|numeric|min:0',
 			'notes'              => 'sometimes|nullable|string',
-			'status'             => 'sometimes|in:pending,in_process,ready,completed',
+			'status'             => 'sometimes|in:pending,ready,to_collect,completed',
 			'estimated_ready_at' => 'sometimes|nullable|date',
 		]);
 
@@ -215,14 +215,14 @@ class OrderController extends Controller implements HasMiddleware
 	public function updateStatus(Request $request, Order $order)
 	{
 		$validated = $request->validate([
-			'status'             => 'required|in:pending,in_process,ready,completed',
+			'status'             => 'required|in:pending,ready,to_collect,completed',
 			'estimated_ready_at' => 'sometimes|nullable|date',
 		]);
 
 		$transitions = [
-			'pending'    => 'in_process',
-			'in_process' => 'ready',
-			'ready'      => 'completed',
+			'pending'    => 'ready',
+			'ready'      => 'to_collect',
+			'to_collect' => 'completed',
 		];
 
 		$next = $transitions[$order->status] ?? null;
@@ -237,11 +237,6 @@ class OrderController extends Controller implements HasMiddleware
 
 		DB::transaction(function () use ($validated, $order) {
 			$order->fill($validated)->save();
-
-			// When order is marked ready, bring all non-final loads up to ready
-			if ($validated['status'] === 'ready') {
-				$order->loads()->where('status', 'in_process')->update(['status' => 'ready']);
-			}
 		});
 
 		return response()->json($order->load(['customer', 'loads', 'payments']));

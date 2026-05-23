@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Load;
 use App\Models\Order;
 use App\Models\Service;
 use App\Services\LoyaltyService;
@@ -77,60 +76,5 @@ class LoadController extends Controller implements HasMiddleware
 		return response()->json($order->fresh()->load(['customer', 'loads', 'payments']));
 	}
 
-	private const TRANSITIONS = [
-		'in_process' => 'ready',
-		'ready'      => 'picked_up',
-	];
-
-	public function updateStatus(Request $request, Load $load)
-	{
-		$validated = $request->validate([
-			'status' => 'required|in:in_process,ready,picked_up',
-		]);
-
-		$next = self::TRANSITIONS[$load->status] ?? null;
-
-		if ($validated['status'] !== $next) {
-			$message = $next
-				? "Load is '{$load->status}', next allowed status is '{$next}'."
-				: "Load is already at its final status '{$load->status}'.";
-
-			return response()->json(['message' => $message], 422);
-		}
-
-		// Block pickup if the order still has an outstanding balance
-		if ($validated['status'] === 'picked_up') {
-			$order   = $load->order;
-			$paid    = $order->payments()->where('type', 'payment')->sum('amount')
-			         - $order->payments()->where('type', 'refund')->sum('amount');
-			$balance = round($order->total_amount - $paid, 2);
-
-			if ($balance > 0) {
-				return response()->json([
-					'message' => "Cannot mark as picked up — order has an outstanding balance of ₱{$balance}.",
-				], 422);
-			}
-		}
-
-		DB::transaction(function () use ($validated, $load) {
-			$load->status = $validated['status'];
-			$load->save();
-
-			// Auto-update order to 'ready' when all its loads are ready
-			if ($validated['status'] === 'ready') {
-				$order = $load->order;
-
-				$allReady = !$order->loads()
-					->where('status', '!=', 'ready')
-					->exists();
-
-				if ($allReady && !in_array($order->status, ['ready', 'completed'])) {
-					$order->status = 'ready';
-					$order->save();
-				}
-			}
-		});
-
-		return response()->json($load->fresh()->load('order'));
-	}
 }
+
