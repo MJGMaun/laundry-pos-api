@@ -43,6 +43,17 @@ class ReportsController extends Controller implements HasMiddleware
 		$orderCount    = $orderIds->count();
 		$avgOrderValue = $orderCount > 0 ? round($revenue / $orderCount, 2) : 0;
 
+		$uncollectedQuery = Order::whereDate('created_at', $date)
+			->whereIn('status', ['ready', 'to_collect']);
+
+		if ($branchId) {
+			$uncollectedQuery->where('branch_id', $branchId);
+		} else {
+			$uncollectedQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
+		}
+
+		$uncollectedRevenue = $uncollectedQuery->sum('total_amount');
+
 		$topService = DB::table('loads')
 			->whereIn('order_id', $orderIds)
 			->whereNull('deleted_at')
@@ -52,12 +63,13 @@ class ReportsController extends Controller implements HasMiddleware
 			->first();
 
 		return response()->json([
-			'date'            => $date,
-			'branch_id'       => $branchId,
-			'revenue'         => round($revenue, 2),
-			'order_count'     => $orderCount,
-			'avg_order_value' => $avgOrderValue,
-			'top_service'     => $topService ? [
+			'date'                => $date,
+			'branch_id'           => $branchId,
+			'revenue'             => round($revenue, 2),
+			'uncollected_revenue' => round($uncollectedRevenue, 2),
+			'order_count'         => $orderCount,
+			'avg_order_value'     => $avgOrderValue,
+			'top_service'         => $topService ? [
 				'name'    => $topService->service_name_snapshot,
 				'revenue' => $topService->revenue,
 			] : null,
@@ -191,6 +203,18 @@ class ReportsController extends Controller implements HasMiddleware
 
 		$revenue = $revenueQuery->sum('total_amount');
 
+		$uncollectedQuery = Order::whereIn('status', ['ready', 'to_collect'])
+			->whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo);
+
+		if ($branchId) {
+			$uncollectedQuery->where('branch_id', $branchId);
+		} else {
+			$uncollectedQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
+		}
+
+		$uncollectedRevenue = $uncollectedQuery->sum('total_amount');
+
 		$testBranchIds = Branch::where('is_test', true)->pluck('id');
 
 		$expenseQuery = Expense::whereDate('expense_date', '>=', $dateFrom)
@@ -225,11 +249,12 @@ class ReportsController extends Controller implements HasMiddleware
 		$profitMargin = $revenue > 0 ? round(($netProfit / $revenue) * 100, 2) : 0;
 
 		return response()->json([
-			'date_from'         => $dateFrom,
-			'date_to'           => $dateTo,
-			'branch_id'         => $branchId,
-			'revenue'           => round($revenue, 2),
-			'expenses'          => [
+			'date_from'           => $dateFrom,
+			'date_to'             => $dateTo,
+			'branch_id'           => $branchId,
+			'revenue'             => round($revenue, 2),
+			'uncollected_revenue' => round($uncollectedRevenue, 2),
+			'expenses'            => [
 				'total'       => round($expenseTotal, 2),
 				'by_category' => $expensesByCategory,
 			],
