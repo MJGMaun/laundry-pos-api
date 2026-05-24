@@ -43,7 +43,7 @@ class PaymentController extends Controller implements HasMiddleware
     public function store(Request $request, Order $order)
     {
         $validated = $request->validate([
-            'method'           => 'required|in:cash,gcash,maya,card',
+            'method'           => 'required|in:cash,gcash',
             'type'             => 'nullable|in:payment,refund',
             'amount'           => 'required|numeric|min:0.01',
             'tendered'         => 'nullable|numeric|min:0',
@@ -61,12 +61,6 @@ class PaymentController extends Controller implements HasMiddleware
             ]);
         }
 
-        // Digital payments require a reference number
-        if ($type === 'payment' && in_array($method, ['gcash', 'maya', 'card'])) {
-            $request->validate([
-                'reference_number' => 'required|string|max:255',
-            ]);
-        }
 
         $payment = DB::transaction(function () use ($validated, $order, $type, $amount) {
             // For refunds: cannot refund more than what was actually paid (net)
