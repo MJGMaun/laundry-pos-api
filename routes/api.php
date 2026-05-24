@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\LoyaltyRuleController;
 use App\Http\Controllers\Api\CashBalanceController;
 use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
+use App\Http\Controllers\Api\DataManagementController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -48,6 +49,10 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::get('branches/{branch}/users',                            [BranchController::class, 'users']);
 	Route::post('branches/{branch}/users',                           [BranchController::class, 'assignUser']);
 	Route::delete('branches/{branch}/users/{user}',                  [BranchController::class, 'removeUser']);
+
+	// Data Management (super_admin only)
+	Route::get('branches/{branch}/data-counts',                      [DataManagementController::class, 'counts']);
+	Route::delete('branches/{branch}/purge',                         [DataManagementController::class, 'purge']);
 	Route::get('branches/{branch}/services',                         [BranchController::class, 'branchServices']);
 	Route::post('branches/{branch}/services',                        [BranchController::class, 'createBranchService']);
 	Route::put('branches/{branch}/services/{service}',               [BranchController::class, 'updateBranchService']);
