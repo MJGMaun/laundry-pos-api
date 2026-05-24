@@ -28,23 +28,25 @@ class ReportsController extends Controller implements HasMiddleware
 		$date     = $request->input('date', today()->toDateString());
 		$branchId = $this->branchId($request);
 
-		$ordersQuery = Order::whereDate('created_at', $date)
-			->where('status', '!=', 'pending');
+		// Paid orders for today
+		$paidQuery = Order::whereDate('created_at', $date)
+			->whereRaw($this->paidCondition());
 
 		if ($branchId) {
-			$ordersQuery->where('branch_id', $branchId);
+			$paidQuery->where('branch_id', $branchId);
 		} else {
-			$ordersQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
+			$paidQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
 		}
 
-		$orderIds = $ordersQuery->pluck('id');
-
-		$revenue       = Order::whereIn('id', $orderIds)->sum('total_amount');
-		$orderCount    = $orderIds->count();
+		$paidOrderIds  = $paidQuery->pluck('id');
+		$revenue       = Order::whereIn('id', $paidOrderIds)->sum('total_amount');
+		$orderCount    = $paidOrderIds->count();
 		$avgOrderValue = $orderCount > 0 ? round($revenue / $orderCount, 2) : 0;
 
+		// Uncollected: ready/to_collect and not yet paid
 		$uncollectedQuery = Order::whereDate('created_at', $date)
-			->whereIn('status', ['ready', 'to_collect']);
+			->whereIn('status', ['ready', 'to_collect'])
+			->whereRaw($this->unpaidCondition());
 
 		if ($branchId) {
 			$uncollectedQuery->where('branch_id', $branchId);
@@ -55,7 +57,7 @@ class ReportsController extends Controller implements HasMiddleware
 		$uncollectedRevenue = $uncollectedQuery->sum('total_amount');
 
 		$topService = DB::table('loads')
-			->whereIn('order_id', $orderIds)
+			->whereIn('order_id', $paidOrderIds)
 			->whereNull('deleted_at')
 			->selectRaw('service_name_snapshot, SUM(line_total) as revenue')
 			->groupBy('service_name_snapshot')
@@ -96,7 +98,7 @@ class ReportsController extends Controller implements HasMiddleware
 			default  => '%Y-%m',
 		};
 
-		$query = Order::where('status', '!=', 'pending')
+		$query = Order::whereRaw($this->paidCondition())
 			->whereDate('created_at', '>=', $dateFrom)
 			->whereDate('created_at', '<=', $dateTo);
 
@@ -129,7 +131,7 @@ class ReportsController extends Controller implements HasMiddleware
 
 		$query = DB::table('orders')
 			->join('customers', 'orders.customer_id', '=', 'customers.id')
-			->where('orders.status', '!=', 'pending')
+			->whereRaw($this->paidCondition())
 			->whereNull('orders.deleted_at')
 			->whereNull('customers.deleted_at');
 
@@ -164,7 +166,7 @@ class ReportsController extends Controller implements HasMiddleware
 
 		$query = DB::table('loads')
 			->join('orders', 'loads.order_id', '=', 'orders.id')
-			->where('orders.status', '!=', 'pending')
+			->whereRaw($this->paidCondition())
 			->whereNull('loads.deleted_at')
 			->whereNull('orders.deleted_at');
 
@@ -191,7 +193,8 @@ class ReportsController extends Controller implements HasMiddleware
 		[$dateFrom, $dateTo] = $this->resolveDateRange($request);
 		$branchId = $this->branchId($request);
 
-		$revenueQuery = Order::where('status', '!=', 'pending')
+		// Revenue: paid orders only
+		$revenueQuery = Order::whereRaw($this->paidCondition())
 			->whereDate('created_at', '>=', $dateFrom)
 			->whereDate('created_at', '<=', $dateTo);
 
@@ -203,7 +206,9 @@ class ReportsController extends Controller implements HasMiddleware
 
 		$revenue = $revenueQuery->sum('total_amount');
 
+		// Uncollected: ready/to_collect and not yet paid
 		$uncollectedQuery = Order::whereIn('status', ['ready', 'to_collect'])
+			->whereRaw($this->unpaidCondition())
 			->whereDate('created_at', '>=', $dateFrom)
 			->whereDate('created_at', '<=', $dateTo);
 
@@ -272,7 +277,7 @@ class ReportsController extends Controller implements HasMiddleware
 		$revenueRows = DB::table('orders')
 			->join('branches', 'orders.branch_id', '=', 'branches.id')
 			->where('branches.is_test', false)
-			->where('orders.status', '!=', 'pending')
+			->whereRaw($this->paidCondition())
 			->whereNull('orders.deleted_at')
 			->whereDate('orders.created_at', '>=', $dateFrom)
 			->whereDate('orders.created_at', '<=', $dateTo)
@@ -332,6 +337,18 @@ class ReportsController extends Controller implements HasMiddleware
 	}
 
 	// --- Helpers ---
+
+	/** Orders where sum of payments >= total_amount (fully paid) */
+	private function paidCondition(): string
+	{
+		return 'COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = orders.id), 0) >= orders.total_amount';
+	}
+
+	/** Orders where sum of payments < total_amount (not yet fully paid) */
+	private function unpaidCondition(): string
+	{
+		return 'COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = orders.id), 0) < orders.total_amount';
+	}
 
 	private function applyDateFilters($query, Request $request, string $column): void
 	{
