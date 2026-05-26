@@ -19,6 +19,7 @@ class ServiceCategoryController extends Controller implements HasMiddleware
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:service_categories,name',
+            'icon' => 'nullable|string|max:10',
         ]);
 
         $category = ServiceCategory::create($validated);
@@ -30,6 +31,7 @@ class ServiceCategoryController extends Controller implements HasMiddleware
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:service_categories,name,' . $serviceCategory->id,
+            'icon' => 'nullable|string|max:10',
         ]);
 
         $serviceCategory->update($validated);
