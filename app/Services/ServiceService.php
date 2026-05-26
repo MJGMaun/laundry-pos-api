@@ -18,7 +18,7 @@ class ServiceService
 			$query->where('is_active', $filters['active']);
 		}
 
-		return $query->latest()->get();
+		return $query->orderBy('category_id')->get();
 	}
 
 	public function create(array $data): Service
