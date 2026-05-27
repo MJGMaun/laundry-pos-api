@@ -48,11 +48,16 @@ class CustomerController extends Controller implements HasMiddleware
 		$branchId = $this->branchId($request);
 
 		$validated = $request->validate([
-			'name'                => 'required|string|max:255',
+			'name'                => [
+				'required', 'string', 'max:255',
+				Rule::unique('customers', 'name')
+					->where(fn($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at')),
+			],
 			'username'            => 'nullable|string|max:255',
 			'phone'               => [
 				'required', 'string', 'max:20',
-				Rule::unique('customers', 'phone')->where('branch_id', $branchId),
+				Rule::unique('customers', 'phone')
+					->where(fn($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at')),
 			],
 			'email'               => 'nullable|email|unique:customers,email',
 			'address'             => 'nullable|string',
@@ -87,11 +92,18 @@ class CustomerController extends Controller implements HasMiddleware
 		$branchId = $this->branchId($request);
 
 		$validated = $request->validate([
-			'name'                => 'sometimes|string|max:255',
+			'name'                => [
+				'sometimes', 'string', 'max:255',
+				Rule::unique('customers', 'name')
+					->where(fn($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at'))
+					->ignore($customer->id),
+			],
 			'username'            => 'nullable|string|max:255',
 			'phone'               => [
 				'sometimes', 'string', 'max:20',
-				Rule::unique('customers', 'phone')->where('branch_id', $branchId)->ignore($customer->id),
+				Rule::unique('customers', 'phone')
+					->where(fn($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at'))
+					->ignore($customer->id),
 			],
 			'email'               => 'nullable|email|unique:customers,email,' . $customer->id,
 			'address'             => 'nullable|string',
