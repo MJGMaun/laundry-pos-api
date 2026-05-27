@@ -15,7 +15,7 @@ class ServiceService
 		}
 
 		if (isset($filters['active'])) {
-			$query->where('is_active', $filters['active']);
+			$query->where('is_active', filter_var($filters['active'], FILTER_VALIDATE_BOOLEAN));
 		}
 
 		return $query->orderBy('category_id')->get();

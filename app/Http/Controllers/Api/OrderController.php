@@ -60,7 +60,8 @@ class OrderController extends Controller implements HasMiddleware
 			$query->unpaid();
 		}
 
-		$orders = $query->latest()->paginate(15);
+		$perPage = min((int) $request->get('per_page', 15), 500);
+		$orders = $query->latest()->paginate($perPage);
 
 		return response()->json($orders);
 	}
