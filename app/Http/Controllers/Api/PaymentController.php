@@ -95,17 +95,20 @@ class PaymentController extends Controller implements HasMiddleware
             $totalRefunds = $allPayments->where('type', 'refund')->sum('amount');
             $netPaid      = $totalPaid - $totalRefunds;
 
-            // If the order just became fully paid, update customer stats
-            if ($netPaid >= $order->total_amount && $order->customer_id) {
+            // Update customer total_spent by the actual payment/refund amount
+            if ($order->customer_id) {
                 $customer = $order->customer;
                 if ($customer) {
-                    // Only increment visits/spent once per order (check if order was previously unpaid)
-                    $previousNet = $netPaid - ($type === 'payment' ? $amount : -$amount);
-                    $wasAlreadyPaid = $previousNet >= $order->total_amount;
+                    if ($type === 'payment') {
+                        $customer->increment('total_spent', $amount);
+                    } else {
+                        $customer->decrement('total_spent', $amount);
+                    }
 
-                    if (! $wasAlreadyPaid) {
+                    // Increment visits only the first time the order becomes fully paid
+                    $previousNet = $netPaid - ($type === 'payment' ? $amount : -$amount);
+                    if ($type === 'payment' && $netPaid >= $order->total_amount && $previousNet < $order->total_amount) {
                         $customer->increment('total_visits');
-                        $customer->increment('total_spent', $order->total_amount);
                     }
                 }
             }
