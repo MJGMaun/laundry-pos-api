@@ -13,6 +13,7 @@ class Expense extends Model
 		'expense_category_id',
 		'user_id',
 		'amount',
+		'payment_method',
 		'expense_date',
 		'description',
 		'receipt_reference',

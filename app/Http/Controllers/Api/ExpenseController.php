@@ -66,13 +66,15 @@ class ExpenseController extends Controller implements HasMiddleware
 		$validated = $request->validate([
 			'expense_category_id' => 'required|exists:expense_categories,id',
 			'amount'              => 'required|numeric|min:0.01',
+			'payment_method'      => 'nullable|in:cash,gcash',
 			'expense_date'        => 'required|date',
 			'description'         => 'nullable|string|max:500',
 			'receipt_reference'   => 'nullable|string|max:255',
 		]);
 
-		$validated['user_id']   = $request->user()->id;
-		$validated['branch_id'] = $this->branchId($request);
+		$validated['payment_method'] = $validated['payment_method'] ?? 'cash';
+		$validated['user_id']        = $request->user()->id;
+		$validated['branch_id']      = $this->branchId($request);
 
 		return response()->json(
 			Expense::create($validated)->load('category', 'user'),
@@ -85,6 +87,7 @@ class ExpenseController extends Controller implements HasMiddleware
 		$validated = $request->validate([
 			'expense_category_id' => 'sometimes|exists:expense_categories,id',
 			'amount'              => 'sometimes|numeric|min:0.01',
+			'payment_method'      => 'sometimes|nullable|in:cash,gcash',
 			'expense_date'        => 'sometimes|date',
 			'description'         => 'sometimes|nullable|string|max:500',
 			'receipt_reference'   => 'sometimes|nullable|string|max:255',

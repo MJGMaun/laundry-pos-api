@@ -37,29 +37,47 @@ class CashBalanceController extends Controller
             }
         }
 
-        // Expenses for this date
-        $expenses = (float) DB::table('expenses')
+        // Expenses for this date, split by payment method
+        $expenseRows = DB::table('expenses')
             ->where('branch_id', $branchId)
             ->where('expense_date', $date)
             ->whereNull('deleted_at')
-            ->sum('amount');
+            ->select('payment_method', DB::raw('SUM(amount) as total'))
+            ->groupBy('payment_method')
+            ->get();
+
+        $cashExpenses  = 0.0;
+        $gcashExpenses = 0.0;
+        foreach ($expenseRows as $row) {
+            if ($row->payment_method === 'gcash') {
+                $gcashExpenses += (float) $row->total;
+            } else {
+                $cashExpenses += (float) $row->total;
+            }
+        }
+        $expenses = $cashExpenses + $gcashExpenses;
 
         $startingBalance = (float) ($record?->starting_balance ?? 0);
         $cashNet         = round($net['cash'], 2);
-        $totalInDrawer   = round($startingBalance + $cashNet - $expenses, 2);
+        $gcashNet        = round($net['gcash'], 2);
+        $totalInDrawer   = round($startingBalance + $cashNet - $cashExpenses, 2);
         $toRemitCash     = round($totalInDrawer - $startingBalance, 2);
+        $toRemitGcash    = round($gcashNet - $gcashExpenses, 2);
 
         return response()->json([
             'date'             => $date,
             'starting_balance' => $startingBalance,
             'set_by'           => $record?->setBy?->name,
             'cash_in'          => $cashNet,
-            'gcash_in'         => round($net['gcash'], 2),
+            'gcash_in'         => $gcashNet,
             'maya_in'          => round($net['maya'], 2),
             'card_in'          => round($net['card'], 2),
             'expenses'         => round($expenses, 2),
+            'cash_expenses'    => round($cashExpenses, 2),
+            'gcash_expenses'   => round($gcashExpenses, 2),
             'total_in_drawer'  => $totalInDrawer,
             'to_remit_cash'    => $toRemitCash,
+            'to_remit_gcash'   => $toRemitGcash,
         ]);
     }
 
