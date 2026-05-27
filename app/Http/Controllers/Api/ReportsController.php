@@ -43,9 +43,9 @@ class ReportsController extends Controller implements HasMiddleware
 		$orderCount    = $paidOrderIds->count();
 		$avgOrderValue = $orderCount > 0 ? round($revenue / $orderCount, 2) : 0;
 
-		// Uncollected: ready/to_collect and not yet paid
+		// Uncollected: ready/claimed and not yet paid
 		$uncollectedQuery = Order::whereDate('created_at', $date)
-			->whereIn('status', ['ready', 'to_collect'])
+			->whereIn('status', ['ready', 'claimed'])
 			->whereRaw($this->unpaidCondition());
 
 		if ($branchId) {
@@ -206,8 +206,8 @@ class ReportsController extends Controller implements HasMiddleware
 
 		$revenue = $revenueQuery->sum('total_amount');
 
-		// Uncollected: ready/to_collect and not yet paid
-		$uncollectedQuery = Order::whereIn('status', ['ready', 'to_collect'])
+		// Uncollected: ready/claimed and not yet paid
+		$uncollectedQuery = Order::whereIn('status', ['ready', 'claimed'])
 			->whereRaw($this->unpaidCondition())
 			->whereDate('created_at', '>=', $dateFrom)
 			->whereDate('created_at', '<=', $dateTo);

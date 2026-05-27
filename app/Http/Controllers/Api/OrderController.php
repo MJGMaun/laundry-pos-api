@@ -190,7 +190,7 @@ class OrderController extends Controller implements HasMiddleware
 			'discount_amount'    => 'sometimes|numeric|min:0',
 			'extra_fees'         => 'sometimes|numeric|min:0',
 			'notes'              => 'sometimes|nullable|string',
-			'status'             => 'sometimes|in:pending,ready,to_collect,completed',
+			'status'             => 'sometimes|in:pending,ready,claimed,completed',
 			'estimated_ready_at' => 'sometimes|nullable|date',
 		]);
 
@@ -215,19 +215,30 @@ class OrderController extends Controller implements HasMiddleware
 	public function updateStatus(Request $request, Order $order)
 	{
 		$validated = $request->validate([
-			'status'             => 'required|in:pending,ready,to_collect,completed',
+			'status'             => 'required|in:pending,ready,claimed,completed',
 			'estimated_ready_at' => 'sometimes|nullable|date',
 		]);
 
-		$transitions = [
-			'pending'    => 'ready',
-			'ready'      => 'to_collect',
-			'to_collect' => 'completed',
+		$forward = [
+			'pending' => 'ready',
+			'ready'   => 'claimed',
+			'claimed' => 'completed',
 		];
 
-		$next = $transitions[$order->status] ?? null;
+		$backward = array_flip($forward);
 
-		if ($validated['status'] !== $next) {
+		$next    = $forward[$order->status] ?? null;
+		$prev    = $backward[$order->status] ?? null;
+		$isAdmin = in_array($request->user()->role, ['super_admin', 'admin']);
+
+		$isForward  = $validated['status'] === $next;
+		$isBackward = $validated['status'] === $prev;
+
+		if ($isBackward && ! $isAdmin) {
+			return response()->json(['message' => 'Only admins can revert order status.'], 403);
+		}
+
+		if (! $isForward && ! $isBackward) {
 			$message = $next
 				? "Order is '{$order->status}', next allowed status is '{$next}'."
 				: "Order is already at its final status '{$order->status}'.";
