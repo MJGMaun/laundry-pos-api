@@ -21,8 +21,9 @@ return [
 
     'allowed_origins' => array_filter([
         env('FRONTEND_URL', 'http://localhost:3000'),
-        'http://localhost',           // Capacitor Android WebView
-        'capacitor://localhost',      // Capacitor iOS WebView
+        'http://localhost',           // Capacitor Android (http scheme)
+        'https://localhost',          // Capacitor Android (androidScheme: https)
+        'capacitor://localhost',      // Capacitor iOS
         'http://localhost:5173',      // Vite dev server
     ]),
 
