@@ -64,12 +64,26 @@ class ReportsController extends Controller implements HasMiddleware
 			->orderByDesc('revenue')
 			->first();
 
+		// Loads today: total laundry loads (sum of quantity) across ALL orders
+		// created today, regardless of payment status — daily throughput.
+		$todayOrdersQuery = Order::whereDate('created_at', $date);
+		if ($branchId) {
+			$todayOrdersQuery->where('branch_id', $branchId);
+		} else {
+			$todayOrdersQuery->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
+		}
+		$loadCount = (int) DB::table('loads')
+			->whereIn('order_id', $todayOrdersQuery->pluck('id'))
+			->whereNull('deleted_at')
+			->sum('quantity');
+
 		return response()->json([
 			'date'                => $date,
 			'branch_id'           => $branchId,
 			'revenue'             => round($revenue, 2),
 			'uncollected_revenue' => round($uncollectedRevenue, 2),
 			'order_count'         => $orderCount,
+			'load_count'          => $loadCount,
 			'avg_order_value'     => $avgOrderValue,
 			'top_service'         => $topService ? [
 				'name'    => $topService->service_name_snapshot,
