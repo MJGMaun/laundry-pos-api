@@ -101,6 +101,8 @@ Route::middleware('auth:sanctum')->group(function () {
 		// Loyalty
 		Route::apiResource('loyalty-rules', LoyaltyRuleController::class)->except(['show']);
 		Route::get('customers/{customer}/loyalty-rewards', [LoyaltyController::class, 'pendingRewards']);
+		Route::post('customers/{customer}/loyalty-stamps/adjust', [LoyaltyController::class, 'adjustStamps'])
+			->middleware('role:admin');
 		Route::post('loyalty-rewards/{reward}/redeem', [LoyaltyController::class, 'redeemReward']);
 	});
 });

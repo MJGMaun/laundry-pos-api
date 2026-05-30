@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\LoyaltyReward;
-use App\Models\LoyaltyStamp;
 use App\Models\Order;
 use App\Models\Service;
 use App\Services\LoyaltyService;
@@ -185,9 +184,10 @@ class OrderController extends Controller implements HasMiddleware
 		$order->load(['customer', 'loads', 'payments', 'user']);
 
 		if ($order->customer) {
-			$order->customer->loyalty_stamp_count = (int) LoyaltyStamp::where('customer_id', $order->customer_id)
-				->where('branch_id', $order->branch_id)
-				->sum('stamps_earned');
+			$order->customer->loyalty_stamp_count = $this->loyaltyService->currentStampCount(
+				$order->customer_id,
+				$order->branch_id,
+			);
 		}
 
 		return response()->json($order);

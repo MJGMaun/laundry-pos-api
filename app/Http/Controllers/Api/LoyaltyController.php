@@ -50,4 +50,41 @@ class LoyaltyController extends Controller
 
         return response()->json($reward->load('rule'));
     }
+
+    /**
+     * Manually add/remove or set a customer's stamp balance. Admin & super-admin only.
+     */
+    public function adjustStamps(Request $request, Customer $customer)
+    {
+        $branchId = $this->branchId($request);
+
+        $validated = $request->validate([
+            'mode'   => 'required|in:add,set',
+            'stamps' => 'required|integer',
+            'note'   => 'nullable|string|max:255',
+        ]);
+
+        if ($validated['mode'] === 'set' && $validated['stamps'] < 0) {
+            return response()->json(['message' => 'Stamp total cannot be negative.'], 422);
+        }
+
+        $current = $this->loyaltyService->currentStampCount($customer->id, $branchId);
+        $delta   = $validated['mode'] === 'set'
+            ? $validated['stamps'] - $current
+            : $validated['stamps'];
+
+        try {
+            $total = $this->loyaltyService->adjustStamps(
+                $customer->id,
+                $branchId,
+                $delta,
+                $validated['note'] ?? null,
+                $request->user()->id,
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['total_stamps' => $total]);
+    }
 }

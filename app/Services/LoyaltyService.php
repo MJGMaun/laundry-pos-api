@@ -33,6 +33,8 @@ class LoyaltyService
             return;
         }
 
+        $previous = $this->currentStampCount($customerId, $branchId);
+
         LoyaltyStamp::create([
             'customer_id'   => $customerId,
             'branch_id'     => $branchId,
@@ -40,14 +42,57 @@ class LoyaltyService
             'stamps_earned' => $stamps,
         ]);
 
-        $total    = LoyaltyStamp::where('customer_id', $customerId)
-                        ->where('branch_id', $branchId)
-                        ->sum('stamps_earned');
-        $previous = $total - $stamps;
+        $this->generateRewards($customerId, $branchId, $previous, $previous + $stamps);
+    }
 
+    /**
+     * Current net stamp balance for a customer at a branch (includes manual adjustments).
+     */
+    public function currentStampCount(int $customerId, int $branchId): int
+    {
+        return (int) LoyaltyStamp::where('customer_id', $customerId)
+            ->where('branch_id', $branchId)
+            ->sum('stamps_earned');
+    }
+
+    /**
+     * Manually adjust a customer's stamp balance (admin/super-admin only).
+     * $delta may be negative to remove stamps. Returns the new total.
+     */
+    public function adjustStamps(int $customerId, int $branchId, int $delta, ?string $note, ?int $userId): int
+    {
+        $current = $this->currentStampCount($customerId, $branchId);
+
+        if ($delta === 0) {
+            return $current;
+        }
+
+        if ($current + $delta < 0) {
+            throw new \InvalidArgumentException('Adjustment would make the stamp total negative.');
+        }
+
+        LoyaltyStamp::create([
+            'customer_id'   => $customerId,
+            'branch_id'     => $branchId,
+            'order_id'      => null,
+            'stamps_earned' => $delta,
+            'note'          => $note,
+            'created_by'    => $userId,
+        ]);
+
+        // Only positive adjustments can cross reward thresholds.
+        if ($delta > 0) {
+            $this->generateRewards($customerId, $branchId, $current, $current + $delta);
+        }
+
+        return $current + $delta;
+    }
+
+    private function generateRewards(int $customerId, int $branchId, int $previousTotal, int $newTotal): void
+    {
         foreach (LoyaltyRule::where('branch_id', $branchId)->active()->get() as $rule) {
-            $newRewards = (int) floor($total / $rule->every_n_stamps)
-                        - (int) floor($previous / $rule->every_n_stamps);
+            $newRewards = (int) floor($newTotal / $rule->every_n_stamps)
+                        - (int) floor($previousTotal / $rule->every_n_stamps);
 
             for ($i = 0; $i < $newRewards; $i++) {
                 LoyaltyReward::create([

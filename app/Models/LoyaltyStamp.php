@@ -11,11 +11,22 @@ class LoyaltyStamp extends Model
         'branch_id',
         'order_id',
         'stamps_earned',
+        'note',
+        'created_by',
+    ];
+
+    protected $casts = [
+        'stamps_earned' => 'integer',
     ];
 
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function order()
