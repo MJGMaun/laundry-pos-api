@@ -11,7 +11,7 @@ class CashBalanceController extends Controller
 {
     public function show(Request $request): \Illuminate\Http\JsonResponse
     {
-        $date     = $request->date ?? now()->toDateString();
+        $date     = $request->date ?? $this->businessToday();
         $branchId = $this->branchId($request);
 
         $record = DailyCashBalance::where('branch_id', $branchId)
@@ -19,11 +19,12 @@ class CashBalanceController extends Controller
             ->with('setBy:id,name')
             ->first();
 
-        // Net per-method totals (payments minus refunds)
+        // Net per-method totals (payments minus refunds). Payment timestamps are
+        // UTC, so bucket by the business-time (PH) calendar date.
         $rows = DB::table('payments')
             ->join('orders', 'payments.order_id', '=', 'orders.id')
             ->where('orders.branch_id', $branchId)
-            ->whereDate('payments.created_at', $date)
+            ->whereRaw($this->bizDateExpr('payments.created_at') . ' = ?', [$date])
             ->whereNull('orders.deleted_at')
             ->select('payments.method', 'payments.type', DB::raw('SUM(payments.amount) as total'))
             ->groupBy('payments.method', 'payments.type')
