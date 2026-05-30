@@ -25,15 +25,15 @@ class ReportsController extends Controller implements HasMiddleware
 	// GET /api/reports/sales-summary?date=2026-05-04  (or ?date_from=&date_to=)
 	public function salesSummary(Request $request)
 	{
-		// Accepts a single ?date or a ?date_from/?date_to range; defaults to today (PH).
-		$dateFrom = $request->input('date_from', $request->input('date', $this->businessToday()));
-		$dateTo   = $request->input('date_to', $request->input('date', $this->businessToday()));
+		// Accepts a single ?date or a ?date_from/?date_to range; defaults to today.
+		$dateFrom = $request->input('date_from', $request->input('date', today()->toDateString()));
+		$dateTo   = $request->input('date_to', $request->input('date', today()->toDateString()));
 		$branchId = $this->branchId($request);
 
 		// Orders recognized in the period (accrual basis): the full order amount
 		// counts on the day the order is created, regardless of when/whether paid.
-		$ordersQuery = Order::whereRaw($this->bizDateExpr('created_at') . ' >= ?', [$dateFrom])
-			->whereRaw($this->bizDateExpr('created_at') . ' <= ?', [$dateTo]);
+		$ordersQuery = Order::whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo);
 
 		if ($branchId) {
 			$ordersQuery->where('branch_id', $branchId);
@@ -49,8 +49,8 @@ class ReportsController extends Controller implements HasMiddleware
 		// Uncollected: pending/ready/claimed orders not yet fully paid — counting
 		// only the outstanding balance (total minus what's already been paid), so
 		// a fully-paid order drops to zero and partial payments reduce it.
-		$uncollectedQuery = Order::whereRaw($this->bizDateExpr('created_at') . ' >= ?', [$dateFrom])
-			->whereRaw($this->bizDateExpr('created_at') . ' <= ?', [$dateTo])
+		$uncollectedQuery = Order::whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo)
 			->whereIn('status', ['pending', 'ready', 'claimed'])
 			->whereRaw($this->unpaidCondition());
 
@@ -100,14 +100,13 @@ class ReportsController extends Controller implements HasMiddleware
 		$period   = $request->input('period', 'monthly');
 		$branchId = $this->branchId($request);
 
-		$phNow = now()->setTimezone('Asia/Manila');
 		$dateFrom = $request->input('date_from', match ($period) {
-			'daily'  => $phNow->copy()->subDays(29)->toDateString(),
-			'weekly' => $phNow->copy()->subWeeks(11)->startOfWeek()->toDateString(),
-			default  => $phNow->copy()->subMonths(11)->startOfMonth()->toDateString(),
+			'daily'  => now()->subDays(29)->toDateString(),
+			'weekly' => now()->subWeeks(11)->startOfWeek()->toDateString(),
+			default  => now()->subMonths(11)->startOfMonth()->toDateString(),
 		});
 
-		$dateTo = $request->input('date_to', $this->businessToday());
+		$dateTo = $request->input('date_to', today()->toDateString());
 
 		$format = match ($period) {
 			'daily'  => '%Y-%m-%d',
@@ -115,9 +114,8 @@ class ReportsController extends Controller implements HasMiddleware
 			default  => '%Y-%m',
 		};
 
-		$bizTime = $this->bizTime('created_at');
-		$query = Order::whereRaw($this->bizDateExpr('created_at') . ' >= ?', [$dateFrom])
-			->whereRaw($this->bizDateExpr('created_at') . ' <= ?', [$dateTo]);
+		$query = Order::whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo);
 
 		if ($branchId) {
 			$query->where('branch_id', $branchId);
@@ -126,8 +124,8 @@ class ReportsController extends Controller implements HasMiddleware
 		}
 
 		$data = $query
-			->selectRaw("DATE_FORMAT({$bizTime}, '{$format}') as period, COUNT(*) as order_count, SUM(total_amount) as revenue")
-			->groupByRaw("DATE_FORMAT({$bizTime}, '{$format}')")
+			->selectRaw("DATE_FORMAT(created_at, '{$format}') as period, COUNT(*) as order_count, SUM(total_amount) as revenue")
+			->groupByRaw("DATE_FORMAT(created_at, '{$format}')")
 			->orderBy('period')
 			->get();
 
@@ -158,11 +156,11 @@ class ReportsController extends Controller implements HasMiddleware
 		}
 
 		if ($request->filled('date_from')) {
-			$query->whereRaw($this->bizDateExpr('orders.created_at') . ' >= ?', [$request->date_from]);
+			$query->whereDate('orders.created_at', '>=', $request->date_from);
 		}
 
 		if ($request->filled('date_to')) {
-			$query->whereRaw($this->bizDateExpr('orders.created_at') . ' <= ?', [$request->date_to]);
+			$query->whereDate('orders.created_at', '<=', $request->date_to);
 		}
 
 		$customers = $query
@@ -209,8 +207,8 @@ class ReportsController extends Controller implements HasMiddleware
 		$branchId = $this->branchId($request);
 
 		// Revenue: accrual — every order recognized in the period, regardless of payment
-		$revenueQuery = Order::whereRaw($this->bizDateExpr('created_at') . ' >= ?', [$dateFrom])
-			->whereRaw($this->bizDateExpr('created_at') . ' <= ?', [$dateTo]);
+		$revenueQuery = Order::whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo);
 
 		if ($branchId) {
 			$revenueQuery->where('branch_id', $branchId);
@@ -224,8 +222,8 @@ class ReportsController extends Controller implements HasMiddleware
 		// outstanding balance (total minus what's already been paid).
 		$uncollectedQuery = Order::whereIn('status', ['pending', 'ready', 'claimed'])
 			->whereRaw($this->unpaidCondition())
-			->whereRaw($this->bizDateExpr('created_at') . ' >= ?', [$dateFrom])
-			->whereRaw($this->bizDateExpr('created_at') . ' <= ?', [$dateTo]);
+			->whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo);
 
 		if ($branchId) {
 			$uncollectedQuery->where('branch_id', $branchId);
@@ -295,8 +293,8 @@ class ReportsController extends Controller implements HasMiddleware
 			->join('branches', 'orders.branch_id', '=', 'branches.id')
 			->where('branches.is_test', false)
 			->whereNull('orders.deleted_at')
-			->whereRaw($this->bizDateExpr('orders.created_at') . ' >= ?', [$dateFrom])
-			->whereRaw($this->bizDateExpr('orders.created_at') . ' <= ?', [$dateTo])
+			->whereDate('orders.created_at', '>=', $dateFrom)
+			->whereDate('orders.created_at', '<=', $dateTo)
 			->selectRaw('branches.id as branch_id, branches.name as branch_name, COUNT(orders.id) as order_count, SUM(orders.total_amount) as revenue')
 			->groupBy('branches.id', 'branches.name')
 			->orderByDesc('revenue')
@@ -368,15 +366,15 @@ class ReportsController extends Controller implements HasMiddleware
 
 	private function applyDateFilters($query, Request $request, string $column): void
 	{
-		// Date filters are bucketed in business time (PH), matching stored UTC timestamps.
 		if ($request->filled('month')) {
-			$query->whereRaw("DATE_FORMAT(" . $this->bizTime($column) . ", '%Y-%m') = ?", [$request->month]);
+			$query->whereYear($column, substr($request->month, 0, 4))
+				->whereMonth($column, substr($request->month, 5, 2));
 		} else {
 			if ($request->filled('date_from')) {
-				$query->whereRaw($this->bizDateExpr($column) . ' >= ?', [$request->date_from]);
+				$query->whereDate($column, '>=', $request->date_from);
 			}
 			if ($request->filled('date_to')) {
-				$query->whereRaw($this->bizDateExpr($column) . ' <= ?', [$request->date_to]);
+				$query->whereDate($column, '<=', $request->date_to);
 			}
 		}
 	}
@@ -393,8 +391,8 @@ class ReportsController extends Controller implements HasMiddleware
 		}
 
 		return [
-			$request->input('date_from', now()->setTimezone('Asia/Manila')->startOfMonth()->toDateString()),
-			$request->input('date_to', $this->businessToday()),
+			$request->input('date_from', now()->startOfMonth()->toDateString()),
+			$request->input('date_to', today()->toDateString()),
 		];
 	}
 }
