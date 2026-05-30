@@ -57,6 +57,25 @@ class CashBalanceController extends Controller
         }
         $expenses = $cashExpenses + $gcashExpenses;
 
+        // Itemized payments for this date — which order/customer made up the totals.
+        $payments = DB::table('payments')
+            ->join('orders', 'payments.order_id', '=', 'orders.id')
+            ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
+            ->where('orders.branch_id', $branchId)
+            ->whereDate('payments.created_at', $date)
+            ->whereNull('orders.deleted_at')
+            ->orderBy('payments.created_at')
+            ->get([
+                'payments.id',
+                'payments.method',
+                'payments.type',
+                'payments.amount',
+                'payments.created_at',
+                'orders.id as order_id',
+                'orders.order_number',
+                'customers.name as customer_name',
+            ]);
+
         $startingBalance = (float) ($record?->starting_balance ?? 0);
         $cashNet         = round($net['cash'], 2);
         $gcashNet        = round($net['gcash'], 2);
@@ -78,6 +97,7 @@ class CashBalanceController extends Controller
             'total_in_drawer'  => $totalInDrawer,
             'to_remit_cash'    => $toRemitCash,
             'to_remit_gcash'   => $toRemitGcash,
+            'payments'         => $payments,
         ]);
     }
 
