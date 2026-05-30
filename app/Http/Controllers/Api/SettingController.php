@@ -32,7 +32,7 @@ class SettingController extends Controller implements HasMiddleware
 
 		// receipt
 		'receipt_footer'            => ['group' => 'receipt', 'rules' => 'nullable|string|max:500'],
-		'receipt_show_loyalty'      => ['group' => 'receipt', 'rules' => 'required|boolean'],
+		'receipt_show_loyalty'      => ['group' => 'receipt', 'rules' => 'required|in:true,false'],
 
 		// printer
 		'printer_name'              => ['group' => 'printer', 'rules' => 'nullable|string|max:255'],
