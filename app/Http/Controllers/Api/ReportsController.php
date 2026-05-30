@@ -22,15 +22,18 @@ class ReportsController extends Controller implements HasMiddleware
 		];
 	}
 
-	// GET /api/reports/sales-summary?date=2026-05-04
+	// GET /api/reports/sales-summary?date=2026-05-04  (or ?date_from=&date_to=)
 	public function salesSummary(Request $request)
 	{
-		$date     = $request->input('date', today()->toDateString());
+		// Accepts a single ?date or a ?date_from/?date_to range; defaults to today.
+		$dateFrom = $request->input('date_from', $request->input('date', today()->toDateString()));
+		$dateTo   = $request->input('date_to', $request->input('date', today()->toDateString()));
 		$branchId = $this->branchId($request);
 
-		// Orders recognized today (accrual basis): the full order amount counts
-		// on the day the order is created, regardless of when/whether it's paid.
-		$ordersQuery = Order::whereDate('created_at', $date);
+		// Orders recognized in the period (accrual basis): the full order amount
+		// counts on the day the order is created, regardless of when/whether paid.
+		$ordersQuery = Order::whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo);
 
 		if ($branchId) {
 			$ordersQuery->where('branch_id', $branchId);
@@ -46,7 +49,8 @@ class ReportsController extends Controller implements HasMiddleware
 		// Uncollected: pending/ready/claimed orders not yet fully paid — counting
 		// only the outstanding balance (total minus what's already been paid), so
 		// a fully-paid order drops to zero and partial payments reduce it.
-		$uncollectedQuery = Order::whereDate('created_at', $date)
+		$uncollectedQuery = Order::whereDate('created_at', '>=', $dateFrom)
+			->whereDate('created_at', '<=', $dateTo)
 			->whereIn('status', ['pending', 'ready', 'claimed'])
 			->whereRaw($this->unpaidCondition());
 
@@ -75,7 +79,8 @@ class ReportsController extends Controller implements HasMiddleware
 			->sum('quantity');
 
 		return response()->json([
-			'date'                => $date,
+			'date_from'           => $dateFrom,
+			'date_to'             => $dateTo,
 			'branch_id'           => $branchId,
 			'revenue'             => round($revenue, 2),
 			'uncollected_revenue' => round($uncollectedRevenue, 2),
