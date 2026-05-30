@@ -228,6 +228,13 @@ class OrderController extends Controller implements HasMiddleware
 			'estimated_ready_at' => 'sometimes|nullable|date',
 		]);
 
+		// Setting the status to what it already is is a no-op success — keeps
+		// redundant calls (e.g. an auto-completed order, or a synced offline
+		// queue replay) from failing.
+		if ($validated['status'] === $order->status) {
+			return response()->json($order->load(['customer', 'loads', 'payments']));
+		}
+
 		$forward = [
 			'pending' => 'ready',
 			'ready'   => 'claimed',
@@ -255,8 +262,20 @@ class OrderController extends Controller implements HasMiddleware
 			return response()->json(['message' => $message], 422);
 		}
 
-		DB::transaction(function () use ($validated, $order) {
+		DB::transaction(function () use ($validated, $order, $isForward) {
 			$order->fill($validated)->save();
+
+			// Advancing forward to "claimed" on an already fully-paid order skips
+			// the extra "Complete" click. Gated to forward moves so an admin
+			// reverting completed -> claimed isn't bounced straight back.
+			if ($isForward && $order->status === 'claimed') {
+				$payments = $order->payments()->get();
+				$netPaid  = $payments->where('type', 'payment')->sum('amount')
+						  - $payments->where('type', 'refund')->sum('amount');
+				if ($netPaid >= $order->total_amount) {
+					$order->update(['status' => 'completed']);
+				}
+			}
 		});
 
 		return response()->json($order->load(['customer', 'loads', 'payments']));

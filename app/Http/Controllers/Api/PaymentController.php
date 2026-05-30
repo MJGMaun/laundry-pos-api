@@ -95,6 +95,12 @@ class PaymentController extends Controller implements HasMiddleware
             $totalRefunds = $allPayments->where('type', 'refund')->sum('amount');
             $netPaid      = $totalPaid - $totalRefunds;
 
+            // Auto-complete: a claimed order that becomes fully paid no longer
+            // needs a manual "Complete" click.
+            if ($type === 'payment' && $order->status === 'claimed' && $netPaid >= $order->total_amount) {
+                $order->update(['status' => 'completed']);
+            }
+
             // Update customer total_spent by the actual payment/refund amount
             if ($order->customer_id) {
                 $customer = $order->customer;
