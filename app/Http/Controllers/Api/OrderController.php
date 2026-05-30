@@ -293,7 +293,10 @@ class OrderController extends Controller implements HasMiddleware
 			}
 		}
 
-		DB::transaction(function () use ($order) {
+		DB::transaction(function () use ($order, $user) {
+			// Reverse any loyalty stamps this order earned before removing it.
+			$this->loyaltyService->reverseOrderStamps($order, $user->id);
+
 			$order->loads()->each(fn($load) => $load->delete());
 			$order->payments()->delete();
 			$order->delete();

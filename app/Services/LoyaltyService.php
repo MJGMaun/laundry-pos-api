@@ -88,6 +88,42 @@ class LoyaltyService
         return $current + $delta;
     }
 
+    /**
+     * Reverse the stamps an order earned (e.g. when the order is deleted).
+     * Clamped so it never drives the balance below zero. Does not revoke
+     * rewards already granted, mirroring manual negative adjustments.
+     */
+    public function reverseOrderStamps(Order $order, ?int $userId): void
+    {
+        if ($order->customer_id === null) {
+            return;
+        }
+
+        $earned = (int) LoyaltyStamp::where('order_id', $order->id)
+            ->where('branch_id', $order->branch_id)
+            ->sum('stamps_earned');
+
+        if ($earned <= 0) {
+            return;
+        }
+
+        $current = $this->currentStampCount($order->customer_id, $order->branch_id);
+        $remove  = min($earned, $current);
+
+        if ($remove <= 0) {
+            return;
+        }
+
+        LoyaltyStamp::create([
+            'customer_id'   => $order->customer_id,
+            'branch_id'     => $order->branch_id,
+            'order_id'      => null,
+            'stamps_earned' => -$remove,
+            'note'          => "Reversed stamps from deleted order #{$order->order_number}",
+            'created_by'    => $userId,
+        ]);
+    }
+
     private function generateRewards(int $customerId, int $branchId, int $previousTotal, int $newTotal): void
     {
         foreach (LoyaltyRule::where('branch_id', $branchId)->active()->get() as $rule) {
