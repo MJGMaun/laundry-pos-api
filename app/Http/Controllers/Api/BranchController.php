@@ -35,7 +35,17 @@ class BranchController extends Controller implements HasMiddleware
 	// GET /api/branches
 	public function index()
 	{
-		return response()->json(Branch::withCount('users')->latest()->get());
+		$branches = Branch::withCount('users')->latest()->get();
+
+		// Resolve the Day Summary toggle per branch (branch override > global > default on)
+		$global    = Setting::whereNull('branch_id')->where('key', 'day_summary_enabled')->value('value');
+		$overrides = Setting::whereNotNull('branch_id')->where('key', 'day_summary_enabled')->pluck('value', 'branch_id');
+
+		$branches->each(function ($b) use ($global, $overrides) {
+			$b->day_summary_enabled = ($overrides[$b->id] ?? $global ?? 'true') !== 'false';
+		});
+
+		return response()->json($branches);
 	}
 
 	// POST /api/branches

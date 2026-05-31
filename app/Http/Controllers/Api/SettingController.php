@@ -36,7 +36,13 @@ class SettingController extends Controller implements HasMiddleware
 
 		// printer
 		'printer_name'              => ['group' => 'printer', 'rules' => 'nullable|string|max:255'],
+
+		// general
+		'day_summary_enabled'       => ['group' => 'general', 'rules' => 'required|in:true,false'],
 	];
+
+	// Settings only a super admin may change (regular admins are blocked).
+	private const SUPER_ADMIN_ONLY = ['day_summary_enabled'];
 
 	// GET /api/settings?group=shop
 	// Returns global settings merged with branch overrides (branch wins per key)
@@ -80,6 +86,10 @@ class SettingController extends Controller implements HasMiddleware
 	// Upserts for the current branch context (null branch_id = global)
 	public function update(Request $request, string $key)
 	{
+		if (in_array($key, self::SUPER_ADMIN_ONLY, true) && ! $request->user()->isSuperAdmin()) {
+			return response()->json(['message' => 'You do not have permission to change this setting.'], 403);
+		}
+
 		$meta  = self::REGISTRY[$key] ?? null;
 		$rules = $meta['rules'] ?? 'required|string|max:1000';
 
