@@ -73,6 +73,7 @@ class CashBalanceController extends Controller
                 'payments.created_at',
                 'orders.id as order_id',
                 'orders.order_number',
+                'orders.created_at as order_created_at',
                 'customers.name as customer_name',
             ]);
 
