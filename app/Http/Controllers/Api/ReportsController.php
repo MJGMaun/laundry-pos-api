@@ -163,8 +163,13 @@ class ReportsController extends Controller implements HasMiddleware
 			$query->whereDate('orders.created_at', '<=', $request->date_to);
 		}
 
+		// total_spent = actual amount paid (sum of payment-type payments per order),
+		// matching the Customer Detail page — not the order totals, which would
+		// include unpaid balances.
+		$paidPerOrder = "(SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.order_id = orders.id AND p.type = 'payment')";
+
 		$customers = $query
-			->selectRaw('customers.id, customers.name, customers.phone, COUNT(orders.id) as total_visits, SUM(orders.total_amount) as total_spent')
+			->selectRaw("customers.id, customers.name, customers.phone, COUNT(orders.id) as total_visits, COALESCE(SUM({$paidPerOrder}), 0) as total_spent")
 			->groupBy('customers.id', 'customers.name', 'customers.phone')
 			->orderByDesc('total_spent')
 			->limit($limit)
