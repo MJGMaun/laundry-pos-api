@@ -72,11 +72,31 @@ class ReportsController extends Controller implements HasMiddleware
 			->orderByDesc('revenue')
 			->first();
 
-		// Loads today: total laundry loads (sum of quantity) across today's orders.
-		$loadCount = (int) DB::table('loads')
-			->whereIn('order_id', $orderIds)
-			->whereNull('deleted_at')
-			->sum('quantity');
+		// Loads: counted per the category's load_rule.
+		//   quantity  → each unit is a load (sum of quantity)
+		//   per_order → all of a category's items in an order = 1 load; multiple
+		//               batches use the max quantity (e.g. Wash x2 + Dry x2 = 2)
+		//   none      → not a load (e.g. add-ons)
+		$quantityLoads = (float) DB::table('loads')
+			->join('services', 'loads.service_id', '=', 'services.id')
+			->join('service_categories', 'services.category_id', '=', 'service_categories.id')
+			->whereIn('loads.order_id', $orderIds)
+			->whereNull('loads.deleted_at')
+			->where('service_categories.load_rule', 'quantity')
+			->sum('loads.quantity');
+
+		$perOrderLoads = DB::table('loads')
+			->join('services', 'loads.service_id', '=', 'services.id')
+			->join('service_categories', 'services.category_id', '=', 'service_categories.id')
+			->whereIn('loads.order_id', $orderIds)
+			->whereNull('loads.deleted_at')
+			->where('service_categories.load_rule', 'per_order')
+			->groupBy('loads.order_id', 'services.category_id')
+			->selectRaw('MAX(loads.quantity) as mx')
+			->get()
+			->sum('mx');
+
+		$loadCount = round($quantityLoads + $perOrderLoads, 2);
 
 		return response()->json([
 			'date_from'           => $dateFrom,

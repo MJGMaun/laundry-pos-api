@@ -18,8 +18,9 @@ class ServiceCategoryController extends Controller implements HasMiddleware
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:service_categories,name',
-            'icon' => 'nullable|string|max:10',
+            'name'      => 'required|string|max:255|unique:service_categories,name',
+            'icon'      => 'nullable|string|max:10',
+            'load_rule' => 'nullable|in:quantity,per_order,none',
         ]);
 
         $category = ServiceCategory::create($validated);
@@ -30,8 +31,9 @@ class ServiceCategoryController extends Controller implements HasMiddleware
     public function update(Request $request, ServiceCategory $serviceCategory)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:service_categories,name,' . $serviceCategory->id,
-            'icon' => 'nullable|string|max:10',
+            'name'      => 'required|string|max:255|unique:service_categories,name,' . $serviceCategory->id,
+            'icon'      => 'nullable|string|max:10',
+            'load_rule' => 'nullable|in:quantity,per_order,none',
         ]);
 
         $serviceCategory->update($validated);
