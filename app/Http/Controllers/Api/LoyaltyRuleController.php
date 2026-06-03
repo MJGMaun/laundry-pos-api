@@ -37,11 +37,18 @@ class LoyaltyRuleController extends Controller implements HasMiddleware
             'reward_description' => 'required|string|max:200',
             'service_id'         => 'nullable|exists:services,id',
             'is_active'          => 'boolean',
+            'reset_stamps'       => 'boolean',
         ]);
 
-        $rule = LoyaltyRule::create(array_merge($validated, [
-            'branch_id' => $this->branchId($request),
-        ]));
+        $branchId = $this->branchId($request);
+
+        if (!empty($validated['reset_stamps'])) {
+            $this->loyaltyService->resetAllStamps($branchId, $request->user()->id);
+        }
+
+        unset($validated['reset_stamps']);
+
+        $rule = LoyaltyRule::create(array_merge($validated, ['branch_id' => $branchId]));
 
         return response()->json($rule, 201);
     }

@@ -141,6 +141,30 @@ class LoyaltyService
         }
     }
 
+    /**
+     * Zero out every customer's stamp balance at a branch (used when starting a fresh program).
+     * Inserts correcting negative entries — no data is deleted.
+     */
+    public function resetAllStamps(int $branchId, ?int $userId = null): void
+    {
+        $rows = LoyaltyStamp::where('branch_id', $branchId)
+            ->selectRaw('customer_id, SUM(stamps_earned) as total')
+            ->groupBy('customer_id')
+            ->having('total', '>', 0)
+            ->get();
+
+        foreach ($rows as $row) {
+            LoyaltyStamp::create([
+                'customer_id'   => $row->customer_id,
+                'branch_id'     => $branchId,
+                'order_id'      => null,
+                'stamps_earned' => -(int) $row->total,
+                'note'          => 'Stamps reset — new loyalty program started',
+                'created_by'    => $userId,
+            ]);
+        }
+    }
+
     public function getPendingRewards(int $customerId, int $branchId): Collection
     {
         return LoyaltyReward::with('rule')
