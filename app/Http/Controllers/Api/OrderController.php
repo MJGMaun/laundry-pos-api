@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\LoyaltyReward;
+use App\Models\LoyaltyRule;
 use App\Models\Order;
 use App\Models\Service;
 use App\Services\LoyaltyService;
@@ -188,6 +189,11 @@ class OrderController extends Controller implements HasMiddleware
 				$order->customer_id,
 				$order->branch_id,
 			);
+			$activeRule = LoyaltyRule::where('branch_id', $order->branch_id)
+				->active()
+				->orderBy('every_n_stamps')
+				->first();
+			$order->customer->loyalty_cycle_size = $activeRule?->every_n_stamps;
 		}
 
 		return response()->json($order);
