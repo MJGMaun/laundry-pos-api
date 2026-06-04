@@ -23,7 +23,8 @@ class OrderController extends Controller implements HasMiddleware
 		return [
 			new Middleware('role:admin,cashier,staff', only: ['store', 'update']),
 			new Middleware('role:admin,cashier,staff', only: ['updateStatus']),
-			new Middleware('role:admin,cashier,staff', only: ['destroy'])
+			new Middleware('role:admin,cashier,staff', only: ['destroy']),
+			new Middleware('role:admin,super_admin', only: ['markDelivered']),
 		];
 	}
 
@@ -60,6 +61,10 @@ class OrderController extends Controller implements HasMiddleware
 
 		if ($request->boolean('unpaid')) {
 			$query->unpaid();
+		}
+
+		if ($request->filled('delivery_date')) {
+			$query->whereDate('delivery_scheduled_at', $request->delivery_date);
 		}
 
 		$perPage = min((int) $request->get('per_page', 15), 500);
@@ -202,11 +207,12 @@ class OrderController extends Controller implements HasMiddleware
 	public function update(Request $request, Order $order)
 	{
 		$validated = $request->validate([
-			'discount_amount'    => 'sometimes|numeric|min:0',
-			'extra_fees'         => 'sometimes|numeric|min:0',
-			'notes'              => 'sometimes|nullable|string',
-			'status'             => 'sometimes|in:pending,ready,claimed,completed',
-			'estimated_ready_at' => 'sometimes|nullable|date',
+			'discount_amount'      => 'sometimes|numeric|min:0',
+			'extra_fees'           => 'sometimes|numeric|min:0',
+			'notes'                => 'sometimes|nullable|string',
+			'status'               => 'sometimes|in:pending,ready,claimed,completed',
+			'estimated_ready_at'   => 'sometimes|nullable|date',
+			'delivery_scheduled_at' => 'sometimes|nullable|date',
 		]);
 
 		DB::transaction(function () use ($validated, $order) {
@@ -241,11 +247,10 @@ class OrderController extends Controller implements HasMiddleware
 			return response()->json($order->load(['customer', 'loads', 'payments']));
 		}
 
-		$forward = [
-			'pending' => 'ready',
-			'ready'   => 'claimed',
-			'claimed' => 'completed',
-		];
+		// Delivered orders skip "claimed" — driver already brought it to the customer.
+		$forward = $order->delivered_at
+			? ['pending' => 'ready', 'ready' => 'completed']
+			: ['pending' => 'ready', 'ready' => 'claimed', 'claimed' => 'completed'];
 
 		$backward = array_flip($forward);
 
@@ -309,6 +314,17 @@ class OrderController extends Controller implements HasMiddleware
 		});
 
 		return response()->json(['message' => 'Order deleted.']);
+	}
+
+	public function markDelivered(Order $order)
+	{
+		if ($order->delivered_at) {
+			return response()->json($order->load(['customer', 'loads', 'payments']));
+		}
+
+		$order->update(['delivered_at' => now()]);
+
+		return response()->json($order->load(['customer', 'loads', 'payments']));
 	}
 
 	private function generateOrderNumber(): string

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\CashBalanceController;
 use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
 use App\Http\Controllers\Api\DataManagementController;
+use App\Http\Controllers\Api\BookingController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -68,7 +69,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
 		// Orders
 		Route::apiResource('orders', OrderController::class);
-		Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus']);
+		Route::patch('orders/{order}/status',    [OrderController::class, 'updateStatus']);
+		Route::patch('orders/{order}/delivered', [OrderController::class, 'markDelivered']);
+
+		// Bookings (pickup scheduling)
+		Route::get('bookings',                    [BookingController::class, 'index']);
+		Route::post('bookings',                   [BookingController::class, 'store']);
+		Route::put('bookings/{booking}',          [BookingController::class, 'update']);
+		Route::delete('bookings/{booking}',       [BookingController::class, 'destroy']);
+		Route::patch('bookings/{booking}/pickup', [BookingController::class, 'markPickedUp']);
 
 		// Loads
 		Route::post('orders/{order}/loads', [LoadController::class, 'store']);

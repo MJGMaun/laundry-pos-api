@@ -22,6 +22,8 @@ class Order extends Model
 		'loyalty_points_earned',
 		'loyalty_points_redeemed',
 		'estimated_ready_at',
+		'delivery_scheduled_at',
+		'delivered_at',
 		'notes',
 	];
 
@@ -33,6 +35,8 @@ class Order extends Model
 		'loyalty_points_earned' => 'integer',
 		'loyalty_points_redeemed' => 'integer',
 		'estimated_ready_at' => 'datetime',
+		'delivery_scheduled_at' => 'datetime',
+		'delivered_at' => 'datetime',
 	];
 
 	// Relationships
