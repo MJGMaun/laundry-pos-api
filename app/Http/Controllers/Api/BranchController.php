@@ -37,12 +37,16 @@ class BranchController extends Controller implements HasMiddleware
 	{
 		$branches = Branch::withCount('users')->latest()->get();
 
-		// Resolve the Day Summary toggle per branch (branch override > global > default on)
-		$global    = Setting::whereNull('branch_id')->where('key', 'day_summary_enabled')->value('value');
-		$overrides = Setting::whereNotNull('branch_id')->where('key', 'day_summary_enabled')->pluck('value', 'branch_id');
+		// Resolve per-branch toggles (branch override > global > default)
+		$dsGlobal    = Setting::whereNull('branch_id')->where('key', 'day_summary_enabled')->value('value');
+		$dsOverrides = Setting::whereNotNull('branch_id')->where('key', 'day_summary_enabled')->pluck('value', 'branch_id');
 
-		$branches->each(function ($b) use ($global, $overrides) {
-			$b->day_summary_enabled = ($overrides[$b->id] ?? $global ?? 'true') !== 'false';
+		$pdGlobal    = Setting::whereNull('branch_id')->where('key', 'pickup_delivery_enabled')->value('value');
+		$pdOverrides = Setting::whereNotNull('branch_id')->where('key', 'pickup_delivery_enabled')->pluck('value', 'branch_id');
+
+		$branches->each(function ($b) use ($dsGlobal, $dsOverrides, $pdGlobal, $pdOverrides) {
+			$b->day_summary_enabled       = ($dsOverrides[$b->id] ?? $dsGlobal ?? 'true') !== 'false';
+			$b->pickup_delivery_enabled   = ($pdOverrides[$b->id] ?? $pdGlobal ?? 'true') !== 'false';
 		});
 
 		return response()->json($branches);
