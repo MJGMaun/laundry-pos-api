@@ -18,7 +18,7 @@ class BranchController extends Controller implements HasMiddleware
 	{
 		return [
 			new Middleware('role:super_admin', only: ['store', 'update', 'destroy']),
-			new Middleware('role:admin',       only: ['index', 'show', 'users', 'assignUser', 'removeUser', 'branchServices', 'createBranchService', 'updateBranchService', 'deleteBranchService']),
+			new Middleware('role:admin',       only: ['index', 'show', 'users', 'assignUser', 'removeUser', 'createBranchService', 'updateBranchService', 'deleteBranchService']),
 		];
 	}
 
