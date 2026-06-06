@@ -308,6 +308,16 @@ class OrderController extends Controller implements HasMiddleware
 			// Reverse any loyalty stamps this order earned before removing it.
 			$this->loyaltyService->reverseOrderStamps($order, $user->id);
 
+			// Reverse total_spent: net of payments minus refunds.
+			if ($order->customer_id) {
+				$payments  = $order->payments()->get();
+				$netPaid   = $payments->where('type', 'payment')->sum('amount')
+				           - $payments->where('type', 'refund')->sum('amount');
+				if ($netPaid > 0 && $order->customer) {
+					$order->customer->decrement('total_spent', $netPaid);
+				}
+			}
+
 			$order->loads()->each(fn($load) => $load->delete());
 			$order->payments()->delete();
 			$order->delete();
