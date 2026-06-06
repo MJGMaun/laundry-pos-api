@@ -115,7 +115,6 @@ class DataManagementController extends Controller implements HasMiddleware
 						'loyalty_points' => 0,
 						'total_visits'   => 0,
 						'total_spent'    => 0,
-						'loyalty_tier_id' => 1,
 					]);
 					$deleted['customer_stats_reset'] = $customerIds->count();
 				}

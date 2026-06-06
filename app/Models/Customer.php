@@ -18,19 +18,9 @@ class Customer extends Model
 		'address',
 		'notes',
 		'loyalty_card_number',
-		'loyalty_tier_id',
 		'loyalty_points',
 		'total_visits',
 		'total_spent',
-	];
-
-	/**
-	 * The attributes that should have a default value.
-	 *
-	 * @var list<string>
-	 */
-	protected $attributes = [
-		'loyalty_tier_id' => 1,
 	];
 
 	protected $casts = [
@@ -40,11 +30,6 @@ class Customer extends Model
 	];
 
 	// Relationships
-	public function loyaltyTier()
-	{
-		return $this->belongsTo(LoyaltyTier::class);
-	}
-
 	public function orders()
 	{
 		return $this->hasMany(Order::class);

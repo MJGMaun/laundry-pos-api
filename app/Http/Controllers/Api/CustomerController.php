@@ -63,7 +63,6 @@ class CustomerController extends Controller implements HasMiddleware
 			'address'             => 'nullable|string',
 			'notes'               => 'nullable|string',
 			'loyalty_card_number' => 'nullable|string|unique:customers,loyalty_card_number',
-			'loyalty_tier_id'     => 'nullable|exists:loyalty_tiers,id',
 		]);
 
 		$validated['branch_id'] = $branchId;
@@ -84,7 +83,7 @@ class CustomerController extends Controller implements HasMiddleware
 
 	public function show(Customer $customer)
 	{
-		return response()->json($customer->load('loyaltyTier'));
+		return response()->json($customer);
 	}
 
 	public function update(Request $request, Customer $customer)
@@ -109,7 +108,6 @@ class CustomerController extends Controller implements HasMiddleware
 			'address'             => 'nullable|string',
 			'notes'               => 'nullable|string',
 			'loyalty_card_number' => 'nullable|string|unique:customers,loyalty_card_number,' . $customer->id,
-			'loyalty_tier_id'     => 'nullable|exists:loyalty_tiers,id',
 			'loyalty_points'      => 'sometimes|integer|min:0',
 			'total_visits'        => 'sometimes|integer|min:0',
 			'total_spent'         => 'sometimes|numeric|min:0',
