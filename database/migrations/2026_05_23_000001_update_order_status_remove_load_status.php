@@ -13,7 +13,14 @@ return new class extends Migration
         DB::table('orders')->where('status', 'in_process')->update(['status' => 'pending']);
 
         // Change order status enum: remove 'in_process', add 'to_collect'
-        DB::statement("ALTER TABLE orders MODIFY COLUMN status ENUM('pending','ready','to_collect','completed') NOT NULL DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE orders MODIFY COLUMN status ENUM('pending','ready','to_collect','completed') NOT NULL DEFAULT 'pending'");
+        } else {
+            // SQLite (tests): rebuild as plain string to drop the enum CHECK constraint
+            Schema::table('orders', function (Blueprint $table) {
+                $table->string('status')->default('pending')->change();
+            });
+        }
 
         // Drop status index and column from loads
         Schema::table('loads', function (Blueprint $table) {
@@ -31,6 +38,8 @@ return new class extends Migration
         });
 
         // Restore order status enum
-        DB::statement("ALTER TABLE orders MODIFY COLUMN status ENUM('pending','in_process','ready','completed') NOT NULL DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE orders MODIFY COLUMN status ENUM('pending','in_process','ready','completed') NOT NULL DEFAULT 'pending'");
+        }
     }
 };
