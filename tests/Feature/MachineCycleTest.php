@@ -129,6 +129,64 @@ it('hides machines of other branches from the list', function () {
         ->assertJsonFragment(['name' => 'Washer 1']);
 });
 
+it('returns month and all-time running totals', function () {
+    $branch = makeBranch();
+    actingAsRole('admin', $branch);
+
+    $washer = Machine::create(['branch_id' => $branch->id, 'name' => 'Washer 1', 'type' => 'washer', 'initial_cycle_count' => 100]);
+    $inactive = Machine::create(['branch_id' => $branch->id, 'name' => 'Old Dryer', 'type' => 'dryer', 'is_active' => false]);
+
+    MachineCycleCount::create(['machine_id' => $washer->id, 'date' => '2026-06-01', 'cycle_count' => 10]);
+    MachineCycleCount::create(['machine_id' => $washer->id, 'date' => '2026-06-11', 'cycle_count' => 5]);
+    // Inactive machines still count toward history
+    MachineCycleCount::create(['machine_id' => $inactive->id, 'date' => '2026-06-02', 'cycle_count' => 3]);
+    // Previous month counts toward all-time only
+    MachineCycleCount::create(['machine_id' => $washer->id, 'date' => '2026-05-31', 'cycle_count' => 7]);
+
+    $response = $this->getJson('/api/machine-cycles?date=2026-06-11', ['X-Branch-Id' => $branch->id]);
+
+    $response->assertOk()
+        ->assertJsonPath('month_total', 18)
+        // 25 recorded + 100 starting meter reading
+        ->assertJsonPath('all_time_total', 125);
+
+    // Per-machine totals on the daily sheet: month is recorded-only, lifetime includes starting count
+    $machines = collect($response->json('machines'));
+    expect($machines->firstWhere('id', $washer->id)['month_cycles'])->toBe(15)
+        ->and($machines->firstWhere('id', $washer->id)['total_cycles'])->toBe(122);
+});
+
+it('includes per-machine all-time totals in the machines list', function () {
+    $branch = makeBranch();
+    actingAsRole('admin', $branch);
+
+    $washer = Machine::create(['branch_id' => $branch->id, 'name' => 'Washer 1', 'type' => 'washer', 'initial_cycle_count' => 50]);
+    MachineCycleCount::create(['machine_id' => $washer->id, 'date' => '2026-06-10', 'cycle_count' => 4]);
+    MachineCycleCount::create(['machine_id' => $washer->id, 'date' => '2026-06-11', 'cycle_count' => 6]);
+
+    $response = $this->getJson('/api/machines', ['X-Branch-Id' => $branch->id])->assertOk();
+
+    expect((int) $response->json('0.total_cycles'))->toBe(60);
+});
+
+it('accepts a starting cycle count when creating and updating a machine', function () {
+    $branch = makeBranch();
+    actingAsRole('admin', $branch);
+
+    $response = $this->postJson('/api/machines', [
+        'name' => 'Washer 1',
+        'type' => 'washer',
+        'initial_cycle_count' => 4500,
+    ], ['X-Branch-Id' => $branch->id]);
+
+    $response->assertCreated()->assertJsonFragment(['initial_cycle_count' => 4500]);
+
+    $machineId = $response->json('id');
+    $this->putJson("/api/machines/{$machineId}", ['initial_cycle_count' => 4600], ['X-Branch-Id' => $branch->id])
+        ->assertOk()
+        ->assertJsonFragment(['initial_cycle_count' => 4600]);
+});
+
 it('excludes inactive machines from the daily cycle sheet', function () {
     $branch = makeBranch();
     actingAsRole('admin', $branch);

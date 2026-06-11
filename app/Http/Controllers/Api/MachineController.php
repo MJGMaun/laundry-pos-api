@@ -20,9 +20,16 @@ class MachineController extends Controller implements HasMiddleware
     public function index(Request $request)
     {
         $machines = $this->scopeToBranch(Machine::query(), $request)
+            ->withSum('cycleCounts as recorded_cycles', 'cycle_count')
             ->orderBy('type')
             ->orderBy('name')
             ->get();
+
+        // Lifetime total = meter reading when added + everything recorded since
+        $machines->each(function ($machine) {
+            $machine->recorded_cycles = (int) $machine->recorded_cycles;
+            $machine->total_cycles = $machine->initial_cycle_count + $machine->recorded_cycles;
+        });
 
         return response()->json($machines);
     }
@@ -38,7 +45,10 @@ class MachineController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'type' => 'required|in:washer,dryer',
+            'initial_cycle_count' => 'nullable|integer|min:0',
         ]);
+
+        $validated['initial_cycle_count'] = $validated['initial_cycle_count'] ?? 0;
 
         $validated['branch_id'] = $branchId;
 
@@ -52,6 +62,7 @@ class MachineController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'name' => 'sometimes|string|max:100',
             'type' => 'sometimes|in:washer,dryer',
+            'initial_cycle_count' => 'sometimes|integer|min:0',
             'is_active' => 'sometimes|boolean',
         ]);
 

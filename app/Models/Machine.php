@@ -13,10 +13,12 @@ class Machine extends Model
         'branch_id',
         'name',
         'type',
+        'initial_cycle_count',
         'is_active',
     ];
 
     protected $casts = [
+        'initial_cycle_count' => 'integer',
         'is_active' => 'boolean',
     ];
 

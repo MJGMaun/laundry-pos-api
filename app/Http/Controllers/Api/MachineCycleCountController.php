@@ -8,6 +8,7 @@ use App\Models\MachineCycleCount;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Carbon;
 
 class MachineCycleCountController extends Controller implements HasMiddleware
 {
@@ -21,11 +22,18 @@ class MachineCycleCountController extends Controller implements HasMiddleware
     public function show(Request $request)
     {
         $date = $request->date ?? now()->toDateString();
+        $month = Carbon::parse($date);
+        $monthStart = $month->copy()->startOfMonth()->toDateString();
+        $monthEnd = $month->copy()->endOfMonth()->toDateString();
 
         $machines = $this->scopeToBranch(Machine::query(), $request)
             ->where('is_active', true)
             ->orderBy('type')
             ->orderBy('name')
+            ->withSum('cycleCounts as recorded_cycles', 'cycle_count')
+            ->withSum(['cycleCounts as month_cycles' => function ($q) use ($monthStart, $monthEnd) {
+                $q->whereBetween('date', [$monthStart, $monthEnd]);
+            }], 'cycle_count')
             ->with(['cycleCounts' => function ($q) use ($date) {
                 $q->where('date', $date)->with('recordedBy:id,name');
             }])
@@ -39,15 +47,30 @@ class MachineCycleCountController extends Controller implements HasMiddleware
                 'name' => $machine->name,
                 'type' => $machine->type,
                 'cycle_count' => $count?->cycle_count,
+                'month_cycles' => (int) $machine->month_cycles,
+                'total_cycles' => $machine->initial_cycle_count + (int) $machine->recorded_cycles,
                 'recorded_by' => $count?->recordedBy?->name,
                 'recorded_at' => $count?->updated_at,
             ];
         });
 
+        // Running totals across all of the branch's machines (active or not)
+        $branchMachineIds = $this->scopeToBranch(Machine::query(), $request)->pluck('id');
+
+        $monthTotal = MachineCycleCount::whereIn('machine_id', $branchMachineIds)
+            ->whereBetween('date', [$monthStart, $monthEnd])
+            ->sum('cycle_count');
+
+        // All-time includes each machine's meter reading when it was added
+        $allTimeTotal = MachineCycleCount::whereIn('machine_id', $branchMachineIds)->sum('cycle_count')
+            + Machine::whereIn('id', $branchMachineIds)->sum('initial_cycle_count');
+
         return response()->json([
             'date' => $date,
             'machines' => $result,
             'total_cycles' => $result->sum(fn ($m) => $m['cycle_count'] ?? 0),
+            'month_total' => (int) $monthTotal,
+            'all_time_total' => (int) $allTimeTotal,
         ]);
     }
 
