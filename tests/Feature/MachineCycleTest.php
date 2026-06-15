@@ -46,7 +46,7 @@ it('forbids a cashier from managing machines or cycle counts', function () {
         ->assertForbidden();
 });
 
-it('saves daily cycle counts and updates on re-save', function () {
+it('saves meter readings as daily deltas and updates on re-save', function () {
     $branch = makeBranch();
     actingAsRole('admin', $branch);
 
@@ -55,22 +55,66 @@ it('saves daily cycle counts and updates on re-save', function () {
 
     $this->postJson('/api/machine-cycles', [
         'date' => '2026-06-11',
-        'counts' => [
-            ['machine_id' => $washer->id, 'cycle_count' => 12],
-            ['machine_id' => $dryer->id, 'cycle_count' => 9],
+        'readings' => [
+            ['machine_id' => $washer->id, 'total_cycle_count' => 12],
+            ['machine_id' => $dryer->id, 'total_cycle_count' => 9],
         ],
     ], ['X-Branch-Id' => $branch->id])->assertOk();
 
     // Re-save the same day — must update, not duplicate
     $this->postJson('/api/machine-cycles', [
         'date' => '2026-06-11',
-        'counts' => [
-            ['machine_id' => $washer->id, 'cycle_count' => 14],
+        'readings' => [
+            ['machine_id' => $washer->id, 'total_cycle_count' => 14],
         ],
     ], ['X-Branch-Id' => $branch->id])->assertOk();
 
     expect(MachineCycleCount::count())->toBe(2)
         ->and(MachineCycleCount::where('machine_id', $washer->id)->first()->cycle_count)->toBe(14);
+});
+
+it('derives the daily delta from the meter reading and previous total', function () {
+    $branch = makeBranch();
+    actingAsRole('admin', $branch);
+
+    // Machine added with the meter already showing 4500 cycles
+    $washer = Machine::create(['branch_id' => $branch->id, 'name' => 'Washer 1', 'type' => 'washer', 'initial_cycle_count' => 4500]);
+
+    // Yesterday's reading: meter at 4508 → +8 cycles that day
+    $this->postJson('/api/machine-cycles', [
+        'date' => '2026-06-10',
+        'readings' => [['machine_id' => $washer->id, 'total_cycle_count' => 4508]],
+    ], ['X-Branch-Id' => $branch->id])->assertOk();
+
+    // Today's reading: meter at 4520 → +12 cycles today
+    $response = $this->postJson('/api/machine-cycles', [
+        'date' => '2026-06-11',
+        'readings' => [['machine_id' => $washer->id, 'total_cycle_count' => 4520]],
+    ], ['X-Branch-Id' => $branch->id])->assertOk();
+
+    expect(MachineCycleCount::where('date', '2026-06-10')->first()->cycle_count)->toBe(8)
+        ->and(MachineCycleCount::where('date', '2026-06-11')->first()->cycle_count)->toBe(12);
+
+    // show() should echo back the meter reading, previous total, and today's delta
+    $today = collect($response->json('machines'))->firstWhere('id', $washer->id);
+    expect($today['previous_total'])->toBe(4508)
+        ->and($today['meter_reading'])->toBe(4520)
+        ->and($today['cycle_count'])->toBe(12)
+        ->and($today['total_cycles'])->toBe(4520);
+});
+
+it('rejects a meter reading below the machine previous total', function () {
+    $branch = makeBranch();
+    actingAsRole('admin', $branch);
+
+    $washer = Machine::create(['branch_id' => $branch->id, 'name' => 'Washer 1', 'type' => 'washer', 'initial_cycle_count' => 4500]);
+
+    $this->postJson('/api/machine-cycles', [
+        'date' => '2026-06-11',
+        'readings' => [['machine_id' => $washer->id, 'total_cycle_count' => 4490]],
+    ], ['X-Branch-Id' => $branch->id])->assertStatus(422);
+
+    expect(MachineCycleCount::count())->toBe(0);
 });
 
 it('returns machines with counts and the daily total', function () {
@@ -107,8 +151,8 @@ it('rejects cycle counts for machines of another branch', function () {
 
     $this->postJson('/api/machine-cycles', [
         'date' => '2026-06-11',
-        'counts' => [
-            ['machine_id' => $foreignMachine->id, 'cycle_count' => 5],
+        'readings' => [
+            ['machine_id' => $foreignMachine->id, 'total_cycle_count' => 5],
         ],
     ], ['X-Branch-Id' => $branch->id])->assertForbidden();
 
