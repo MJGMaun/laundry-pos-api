@@ -25,6 +25,10 @@ class Load extends Model
 		'line_total' => 'decimal:2',
 	];
 
+	// The service/category relations are eager-loaded only to compute the
+	// order's load_count; keep them out of the serialized load payload.
+	protected $hidden = ['service'];
+
 	public function order()
 	{
 		return $this->belongsTo(Order::class);

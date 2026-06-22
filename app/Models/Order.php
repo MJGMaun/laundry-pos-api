@@ -39,6 +39,38 @@ class Order extends Model
 		'delivered_at' => 'datetime',
 	];
 
+	protected $appends = ['load_count'];
+
+	// Load count, computed exactly like the dashboard (ReportsController@summary):
+	//   quantity  → each unit is a load (sum of quantity)
+	//   per_order → all of a category's items in this order = 1 load; multiple
+	//               batches use the max quantity (e.g. Wash x2 + Dry x2 = 2)
+	//   none      → not a load (e.g. add-ons like "Add Dry")
+	public function getLoadCountAttribute(): float
+	{
+		$loads = $this->relationLoaded('loads') ? $this->loads : $this->loads()->get();
+		$loads->loadMissing('service.category');
+
+		$quantityLoads = 0.0;
+		$perOrderMax   = []; // category_id => max quantity
+
+		foreach ($loads as $load) {
+			$rule = optional(optional($load->service)->category)->load_rule;
+
+			if ($rule === 'per_order') {
+				$catId = $load->service->category_id;
+				$perOrderMax[$catId] = max($perOrderMax[$catId] ?? 0, (float) $load->quantity);
+			} elseif ($rule === 'none') {
+				continue;
+			} else {
+				// default to the 'quantity' rule when unset
+				$quantityLoads += (float) $load->quantity;
+			}
+		}
+
+		return round($quantityLoads + array_sum($perOrderMax), 2);
+	}
+
 	// Relationships
 	public function customer()
 	{

@@ -30,7 +30,7 @@ class OrderController extends Controller implements HasMiddleware
 
 	public function index(Request $request)
 	{
-		$query = Order::with(['customer', 'loads'])
+		$query = Order::with(['customer', 'loads.service.category'])
 			->withSum(['payments as paid_amount' => fn($q) => $q->where('type', 'payment')], 'amount');
 
 		$this->scopeToBranch($query, $request);
