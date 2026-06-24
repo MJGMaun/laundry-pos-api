@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Load;
 use App\Models\Order;
 use App\Models\Service;
 use App\Services\LoyaltyService;
@@ -10,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class LoadController extends Controller implements HasMiddleware
 {
@@ -33,12 +35,19 @@ class LoadController extends Controller implements HasMiddleware
 			'loads.*.service_id'   => 'required|exists:services,id',
 			'loads.*.quantity'     => 'required|numeric|min:0.01',
 			'loads.*.notes'        => 'nullable|string',
+			'loads.*._key'         => 'nullable|string|max:64',
+			'loads.*.parent_key'   => 'nullable|string|max:64',
+			// An existing parent load this add-on attaches to (must be in this order).
+			'loads.*.parent_load_id' => [
+				'nullable',
+				Rule::exists('loads', 'id')->where('order_id', $order->id),
+			],
 		]);
 
 		DB::transaction(function () use ($validated, $order) {
-			$loadsData          = [];
-			$addedTotal         = 0;
-			$eligibleNewStamps  = 0.0;
+			$resolved          = [];
+			$addedTotal        = 0;
+			$eligibleNewStamps = 0.0;
 
 			foreach ($validated['loads'] as $loadInput) {
 				$service   = Service::findOrFail($loadInput['service_id']);
@@ -49,17 +58,18 @@ class LoadController extends Controller implements HasMiddleware
 					$eligibleNewStamps += $loadInput['quantity'];
 				}
 
-				$loadsData[] = [
-					'service_id'            => $service->id,
-					'service_name_snapshot' => $service->name,
-					'unit_price_snapshot'   => $service->price,
-					'quantity'              => $loadInput['quantity'],
-					'line_total'            => $lineTotal,
-					'notes'                 => $loadInput['notes'] ?? null,
+				$resolved[] = [
+					'service'        => $service,
+					'line_total'     => $lineTotal,
+					'quantity'       => $loadInput['quantity'],
+					'notes'          => $loadInput['notes'] ?? null,
+					'_key'           => $loadInput['_key'] ?? null,
+					'parent_key'     => $loadInput['parent_key'] ?? null,
+					'parent_load_id' => $loadInput['parent_load_id'] ?? null,
 				];
 			}
 
-			$order->loads()->createMany($loadsData);
+			Load::createWithAddons($order, $resolved);
 
 			$order->subtotal     = round($order->subtotal + $addedTotal, 2);
 			$order->total_amount = round($order->subtotal + $order->extra_fees - $order->discount_amount, 2);
@@ -73,7 +83,7 @@ class LoadController extends Controller implements HasMiddleware
 			}
 		});
 
-		return response()->json($order->fresh()->load(['customer', 'loads', 'payments']));
+		return response()->json($order->fresh()->load(['customer', 'loads.addons', 'payments']));
 	}
 
 }

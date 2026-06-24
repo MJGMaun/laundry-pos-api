@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Load;
 use App\Models\LoyaltyReward;
 use App\Models\LoyaltyRule;
 use App\Models\Order;
@@ -82,6 +83,8 @@ class OrderController extends Controller implements HasMiddleware
 			'loads.*.service_id'   => 'required|exists:services,id',
 			'loads.*.quantity'     => 'required|numeric|min:0.01',
 			'loads.*.notes'        => 'nullable|string',
+			'loads.*._key'         => 'nullable|string|max:64',
+			'loads.*.parent_key'   => 'nullable|string|max:64',
 			'extra_fees'           => 'nullable|numeric|min:0',
 			'discount_amount'      => 'nullable|numeric|min:0',
 			'loyalty_free_loads'   => 'nullable|integer|min:0',
@@ -92,7 +95,7 @@ class OrderController extends Controller implements HasMiddleware
 		if (!empty($validated['client_id'])) {
 			$existing = Order::where('client_id', $validated['client_id'])->first();
 			if ($existing) {
-				return response()->json($existing->load(['customer', 'loads']), 200);
+				return response()->json($existing->load(['customer', 'loads.addons']), 200);
 			}
 		}
 
@@ -112,7 +115,7 @@ class OrderController extends Controller implements HasMiddleware
 			}
 		}
 
-		return response()->json($order->load(['customer', 'loads']), 201);
+		return response()->json($order->load(['customer', 'loads.addons']), 201);
 	}
 
 	private function attemptCreateOrder(array $validated, Request $request): Order
@@ -125,22 +128,24 @@ class OrderController extends Controller implements HasMiddleware
 
 		try {
 			return DB::transaction(function () use ($validated, $request) {
-			$loadsData = [];
-			$subtotal  = 0;
+			// Resolve services + line totals up front so we know the subtotal
+			// before creating the order, then create loads in two passes
+			// (primaries first, then add-ons linked to them via client keys).
+			$resolved = [];
+			$subtotal = 0;
 
 			foreach ($validated['loads'] as $loadInput) {
-				$service = Service::findOrFail($loadInput['service_id']);
-
+				$service   = Service::findOrFail($loadInput['service_id']);
 				$lineTotal = round($service->price * $loadInput['quantity'], 2);
 				$subtotal += $lineTotal;
 
-				$loadsData[] = [
-					'service_id'            => $service->id,
-					'service_name_snapshot' => $service->name,
-					'unit_price_snapshot'   => $service->price,
-					'quantity'              => $loadInput['quantity'],
-					'line_total'            => $lineTotal,
-					'notes'                 => $loadInput['notes'] ?? null,
+				$resolved[] = [
+					'service'    => $service,
+					'line_total' => $lineTotal,
+					'quantity'   => $loadInput['quantity'],
+					'notes'      => $loadInput['notes'] ?? null,
+					'_key'       => $loadInput['_key'] ?? null,
+					'parent_key' => $loadInput['parent_key'] ?? null,
 				];
 			}
 
@@ -162,7 +167,7 @@ class OrderController extends Controller implements HasMiddleware
 				'estimated_ready_at' => $validated['estimated_ready_at'] ?? null,
 			]);
 
-			$order->loads()->createMany($loadsData);
+			Load::createWithAddons($order, $resolved);
 
 			$this->loyaltyService->recordStamps($order->load('loads'));
 
@@ -187,7 +192,7 @@ class OrderController extends Controller implements HasMiddleware
 
 	public function show(Order $order)
 	{
-		$order->load(['customer', 'loads', 'payments', 'user']);
+		$order->load(['customer', 'loads.addons', 'payments', 'user']);
 
 		if ($order->customer) {
 			$order->customer->loyalty_stamp_count = $this->loyaltyService->currentStampCount(
@@ -230,7 +235,7 @@ class OrderController extends Controller implements HasMiddleware
 			$order->save();
 		});
 
-		return response()->json($order->load(['customer', 'loads', 'payments']));
+		return response()->json($order->load(['customer', 'loads.addons', 'payments']));
 	}
 
 	public function updateStatus(Request $request, Order $order)
@@ -244,7 +249,7 @@ class OrderController extends Controller implements HasMiddleware
 		// redundant calls (e.g. an auto-completed order, or a synced offline
 		// queue replay) from failing.
 		if ($validated['status'] === $order->status) {
-			return response()->json($order->load(['customer', 'loads', 'payments']));
+			return response()->json($order->load(['customer', 'loads.addons', 'payments']));
 		}
 
 		// Delivered orders skip "claimed" — driver already brought it to the customer.
@@ -289,7 +294,7 @@ class OrderController extends Controller implements HasMiddleware
 			}
 		});
 
-		return response()->json($order->load(['customer', 'loads', 'payments']));
+		return response()->json($order->load(['customer', 'loads.addons', 'payments']));
 	}
 
 	public function destroy(Order $order)
@@ -329,12 +334,12 @@ class OrderController extends Controller implements HasMiddleware
 	public function markDelivered(Order $order)
 	{
 		if ($order->delivered_at) {
-			return response()->json($order->load(['customer', 'loads', 'payments']));
+			return response()->json($order->load(['customer', 'loads.addons', 'payments']));
 		}
 
 		$order->update(['delivered_at' => now()]);
 
-		return response()->json($order->load(['customer', 'loads', 'payments']));
+		return response()->json($order->load(['customer', 'loads.addons', 'payments']));
 	}
 
 	private function generateOrderNumber(): string
