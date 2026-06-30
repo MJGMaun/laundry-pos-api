@@ -45,6 +45,11 @@ class OrderController extends Controller implements HasMiddleware
 			$query->where(function ($q) use ($search) {
 				$q->where('order_number', 'like', "%{$search}%")
 				  ->orWhereHas('customer', fn($cq) => $cq->where('name', 'like', "%{$search}%"));
+
+				// A numeric term also matches the order total (e.g. "500" → ₱500.00).
+				if (is_numeric($search)) {
+					$q->orWhere('total_amount', 'like', "%{$search}%");
+				}
 			});
 		}
 
