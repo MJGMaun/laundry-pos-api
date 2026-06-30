@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
 use App\Http\Controllers\Api\DataManagementController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\MessageController;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -108,6 +109,16 @@ Route::middleware('auth:sanctum')->group(function () {
 			Route::get('top-customers', [ReportsController::class, 'topCustomers']);
 			Route::get('services',      [ReportsController::class, 'services']);
 			Route::get('profit-loss',   [ReportsController::class, 'profitLoss']);
+		});
+
+		// Chat / messages (scoped to the active branch)
+		Route::prefix('messages')->group(function () {
+			Route::get('conversations',                          [MessageController::class, 'conversations']);
+			Route::get('conversations/{conversation}',           [MessageController::class, 'show']);
+			Route::post('conversations/{conversation}/messages', [MessageController::class, 'send']);
+			Route::post('direct',                                [MessageController::class, 'direct']);
+			Route::get('users/search',                           [MessageController::class, 'searchUsers']);
+			Route::get('unread-count',                           [MessageController::class, 'unreadCount']);
 		});
 
 		// Payments

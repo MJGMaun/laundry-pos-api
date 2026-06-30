@@ -8,7 +8,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-
 class User extends Authenticatable
 {
 	/** @use HasFactory<\Database\Factories\UserFactory> */
@@ -24,7 +23,7 @@ class User extends Authenticatable
 		'username',
 		'email',
 		'password',
-		'role'
+		'role',
 	];
 
 	/**
@@ -63,6 +62,13 @@ class User extends Authenticatable
 	{
 		return $this->belongsToMany(Branch::class, 'branch_user')
 			->withPivot('is_primary')
+			->withTimestamps();
+	}
+
+	public function conversations()
+	{
+		return $this->belongsToMany(Conversation::class, 'conversation_user')
+			->withPivot('last_read_at')
 			->withTimestamps();
 	}
 
