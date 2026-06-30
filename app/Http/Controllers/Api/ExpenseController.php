@@ -30,6 +30,14 @@ class ExpenseController extends Controller implements HasMiddleware
 				$query->where('expense_category_id', $request->category_id);
 			}
 
+			if ($request->filled('search')) {
+				$term = $request->search;
+				$query->where(function ($q) use ($term) {
+					$q->where('description', 'like', "%{$term}%")
+						->orWhereHas('category', fn ($c) => $c->where('name', 'like', "%{$term}%"));
+				});
+			}
+
 			if ($request->filled('month')) {
 				$query->whereYear('expense_date', substr($request->month, 0, 4))
 					->whereMonth('expense_date', substr($request->month, 5, 2));
