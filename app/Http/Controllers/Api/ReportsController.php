@@ -186,7 +186,7 @@ class ReportsController extends Controller implements HasMiddleware
 		// total_spent = actual amount paid (sum of payment-type payments per order),
 		// matching the Customer Detail page — not the order totals, which would
 		// include unpaid balances.
-		$paidPerOrder = "(SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.order_id = orders.id AND p.type = 'payment')";
+		$paidPerOrder = "(SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.order_id = orders.id AND p.type = 'payment' AND p.deleted_at IS NULL)";
 
 		$customers = $query
 			->selectRaw("customers.id, customers.name, customers.phone, COUNT(orders.id) as total_visits, COALESCE(SUM({$paidPerOrder}), 0) as total_spent")
@@ -380,13 +380,13 @@ class ReportsController extends Controller implements HasMiddleware
 	/** Orders where sum of payments < total_amount (not yet fully paid) */
 	private function unpaidCondition(): string
 	{
-		return 'COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = orders.id), 0) < orders.total_amount';
+		return 'COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = orders.id AND p.deleted_at IS NULL), 0) < orders.total_amount';
 	}
 
 	/** Sums the still-outstanding balance (total minus payments) as `outstanding`. */
 	private function outstandingBalanceSum(): string
 	{
-		return 'COALESCE(SUM(orders.total_amount - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = orders.id), 0)), 0) as outstanding';
+		return 'COALESCE(SUM(orders.total_amount - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = orders.id AND p.deleted_at IS NULL), 0)), 0) as outstanding';
 	}
 
 	private function applyDateFilters($query, Request $request, string $column): void

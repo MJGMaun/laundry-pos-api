@@ -106,7 +106,7 @@ class Order extends Model
 	public function scopeUnpaid($query)
 	{
 		return $query->whereRaw(
-			'COALESCE((SELECT SUM(amount) FROM payments WHERE payments.order_id = orders.id), 0) < total_amount'
+			'COALESCE((SELECT SUM(amount) FROM payments WHERE payments.order_id = orders.id AND payments.deleted_at IS NULL), 0) < total_amount'
 		);
 	}
 }

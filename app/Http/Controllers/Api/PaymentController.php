@@ -154,4 +154,105 @@ class PaymentController extends Controller implements HasMiddleware
             ],
         ], 201);
     }
+
+    // All payments for the active branch (admin-only via route middleware) —
+    // date range, method, and order-number/customer search filters.
+    public function all(Request $request)
+    {
+        $branchId = $this->branchId($request);
+        $dateFrom = $request->date_from ?? now()->toDateString();
+        $dateTo   = $request->date_to ?? $dateFrom;
+        if ($dateTo < $dateFrom) {
+            [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+        }
+
+        $query = Payment::query()
+            ->join('orders', 'payments.order_id', '=', 'orders.id')
+            ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
+            ->where('orders.branch_id', $branchId)
+            ->whereNull('orders.deleted_at')
+            ->whereDate('payments.created_at', '>=', $dateFrom)
+            ->whereDate('payments.created_at', '<=', $dateTo);
+
+        if (in_array($request->input('method'), ['cash', 'gcash'], true)) {
+            $query->where('payments.method', $request->input('method'));
+        }
+
+        if ($q = trim((string) $request->q)) {
+            $query->where(function ($w) use ($q) {
+                $w->where('orders.order_number', 'like', "%{$q}%")
+                  ->orWhere('customers.name', 'like', "%{$q}%");
+            });
+        }
+
+        $totals = (clone $query)
+            ->selectRaw("
+                SUM(CASE WHEN payments.type = 'payment' THEN payments.amount ELSE 0 END) as total_paid,
+                SUM(CASE WHEN payments.type = 'refund' THEN payments.amount ELSE 0 END) as total_refunds
+            ")
+            ->first();
+
+        $payments = $query
+            ->orderByDesc('payments.created_at')
+            ->select([
+                'payments.id',
+                'payments.method',
+                'payments.type',
+                'payments.amount',
+                'payments.reference_number',
+                'payments.created_at',
+                'orders.id as order_id',
+                'orders.order_number',
+                'customers.name as customer_name',
+            ])
+            ->paginate(50);
+
+        $totalPaid    = round((float) ($totals->total_paid ?? 0), 2);
+        $totalRefunds = round((float) ($totals->total_refunds ?? 0), 2);
+
+        return response()->json([
+            'date_from' => $dateFrom,
+            'date_to'   => $dateTo,
+            'summary'   => [
+                'total_paid'    => $totalPaid,
+                'total_refunds' => $totalRefunds,
+                'net'           => round($totalPaid - $totalRefunds, 2),
+            ],
+        ] + $payments->toArray());
+    }
+
+    // Soft-delete a payment (admin-only via route middleware), reversing its
+    // side effects: customer total_spent and the auto-complete status flip.
+    public function destroy(Request $request, Payment $payment)
+    {
+        $order = $payment->order;
+
+        if (! $order || $order->branch_id !== $this->branchId($request)) {
+            abort(404);
+        }
+
+        DB::transaction(function () use ($payment, $order) {
+            // Reverse the customer spend recorded by store().
+            if ($order->customer_id && $order->customer) {
+                if ($payment->type === 'payment') {
+                    $order->customer->decrement('total_spent', (float) $payment->amount);
+                } else {
+                    $order->customer->increment('total_spent', (float) $payment->amount);
+                }
+            }
+
+            $payment->delete();
+
+            // A completed order that is no longer fully paid goes back to
+            // claimed (the inverse of the auto-complete in store()).
+            $remaining = $order->payments()->get();
+            $netPaid   = $remaining->where('type', 'payment')->sum('amount')
+                       - $remaining->where('type', 'refund')->sum('amount');
+            if ($order->status === 'completed' && $netPaid < (float) $order->total_amount) {
+                $order->update(['status' => 'claimed']);
+            }
+        });
+
+        return response()->json(['message' => 'Payment deleted.']);
+    }
 }

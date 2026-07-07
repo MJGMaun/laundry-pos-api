@@ -124,6 +124,8 @@ Route::middleware('auth:sanctum')->group(function () {
 		// Payments
 		Route::get('orders/{order}/payments', [PaymentController::class, 'index']);
 		Route::post('orders/{order}/payments', [PaymentController::class, 'store']);
+		Route::get('payments', [PaymentController::class, 'all'])->middleware('role:admin');
+		Route::delete('payments/{payment}', [PaymentController::class, 'destroy'])->middleware('role:admin');
 
 		// Loyalty
 		Route::apiResource('loyalty-rules', LoyaltyRuleController::class)->except(['show']);

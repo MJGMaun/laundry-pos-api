@@ -33,6 +33,7 @@ class CashBalanceController extends Controller
             ->where('orders.branch_id', $branchId)
             ->whereDate('payments.created_at', '>=', $dateFrom)
             ->whereDate('payments.created_at', '<=', $dateTo)
+            ->whereNull('payments.deleted_at')
             ->whereNull('orders.deleted_at')
             ->select('payments.method', 'payments.type', DB::raw('SUM(payments.amount) as total'))
             ->groupBy('payments.method', 'payments.type')
@@ -73,6 +74,7 @@ class CashBalanceController extends Controller
             ->where('orders.branch_id', $branchId)
             ->whereDate('payments.created_at', '>=', $dateFrom)
             ->whereDate('payments.created_at', '<=', $dateTo)
+            ->whereNull('payments.deleted_at')
             ->whereNull('orders.deleted_at')
             ->orderBy('payments.created_at')
             ->get([
