@@ -48,7 +48,13 @@ class PaymentController extends Controller implements HasMiddleware
             'amount'           => 'required|numeric|min:0.01',
             'tendered'         => 'nullable|numeric|min:0',
             'reference_number' => 'nullable|string|max:255',
+            'payment_date'     => 'nullable|date|before_or_equal:today',
         ]);
+
+        // Only admins may backdate a payment; silently ignore for other roles.
+        if (! in_array($request->user()->role, ['super_admin', 'admin'])) {
+            unset($validated['payment_date']);
+        }
 
         $type   = $validated['type'] ?? 'payment';
         $method = $validated['method'];
@@ -88,6 +94,14 @@ class PaymentController extends Controller implements HasMiddleware
                 'change_amount'    => $changeAmount,
                 'reference_number' => $validated['reference_number'] ?? null,
             ]);
+
+            // Admin backdating: cash balance / day summary key off the
+            // payment's created_at, so a late-entered payment can land on
+            // its real business date.
+            if (!empty($validated['payment_date'])) {
+                $payment->created_at = \Carbon\Carbon::parse($validated['payment_date'])->setTimeFrom(now());
+                $payment->save();
+            }
 
             // After recording, recalculate net paid
             $allPayments  = $order->payments()->get();

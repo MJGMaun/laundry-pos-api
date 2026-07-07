@@ -95,7 +95,13 @@ class OrderController extends Controller implements HasMiddleware
 			'loyalty_free_loads'   => 'nullable|integer|min:0',
 			'notes'                => 'nullable|string',
 			'estimated_ready_at'   => 'nullable|date',
+			'order_date'           => 'nullable|date|before_or_equal:today',
 		]);
+
+		// Only admins may backdate an order; silently ignore for other roles.
+		if (! in_array($request->user()->role, ['super_admin', 'admin'])) {
+			unset($validated['order_date']);
+		}
 
 		if (!empty($validated['client_id'])) {
 			$existing = Order::where('client_id', $validated['client_id'])->first();
@@ -127,9 +133,13 @@ class OrderController extends Controller implements HasMiddleware
 	{
 		// Advisory lock serialises order-number generation across concurrent requests.
 		// GET_LOCK is connection-level (not transaction-level), so it truly blocks
-		// other requests until this one commits and releases.
+		// other requests until this one commits and releases. MySQL-only — the
+		// SQLite test database is single-connection and needs no lock.
 		$lockName = 'laundry_order_number_' . now()->format('Ymd');
-		DB::statement("SELECT GET_LOCK('{$lockName}', 10)");
+		$useLock  = DB::getDriverName() === 'mysql';
+		if ($useLock) {
+			DB::statement("SELECT GET_LOCK('{$lockName}', 10)");
+		}
 
 		try {
 			return DB::transaction(function () use ($validated, $request) {
@@ -172,6 +182,15 @@ class OrderController extends Controller implements HasMiddleware
 				'estimated_ready_at' => $validated['estimated_ready_at'] ?? null,
 			]);
 
+			// Admin backdating: every report/list keys off created_at, so an
+			// order entered late lands on its real business date. Keep the
+			// current time-of-day so same-day ordering stays sensible;
+			// updated_at still records when it was actually entered.
+			if (!empty($validated['order_date'])) {
+				$order->created_at = \Carbon\Carbon::parse($validated['order_date'])->setTimeFrom(now());
+				$order->save();
+			}
+
 			Load::createWithAddons($order, $resolved);
 
 			$this->loyaltyService->recordStamps($order->load('loads'));
@@ -191,7 +210,9 @@ class OrderController extends Controller implements HasMiddleware
 			return $order;
 		});
 		} finally {
-			DB::statement("SELECT RELEASE_LOCK('{$lockName}')");
+			if ($useLock) {
+				DB::statement("SELECT RELEASE_LOCK('{$lockName}')");
+			}
 		}
 	}
 
