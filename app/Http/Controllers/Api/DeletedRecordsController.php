@@ -14,8 +14,8 @@ use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
 // Super-admin audit log of soft-deleted records across all branches.
-// View-only: nothing here restores or purges. deleted_by is not tracked
-// anywhere in the schema, so the log shows what and when, not who.
+// View-only: nothing here restores or purges. deleted_by is stamped by the
+// TracksDeletedBy model trait on every soft delete.
 class DeletedRecordsController extends Controller implements HasMiddleware
 {
 	public static function middleware(): array
@@ -34,6 +34,7 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 				->join('orders', 'payments.order_id', '=', 'orders.id')
 				->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
 				->leftJoin('branches', 'orders.branch_id', '=', 'branches.id')
+				->leftJoin('users as deleters', 'payments.deleted_by', '=', 'deleters.id')
 				->select([
 					'payments.id',
 					'payments.method',
@@ -45,11 +46,13 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 					'orders.order_number',
 					'customers.name as customer_name',
 					'branches.name as branch_name',
+					'deleters.name as deleted_by_name',
 				]),
 
 			'orders' => Order::onlyTrashed()
 				->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
 				->leftJoin('branches', 'orders.branch_id', '=', 'branches.id')
+				->leftJoin('users as deleters', 'orders.deleted_by', '=', 'deleters.id')
 				->select([
 					'orders.id',
 					'orders.order_number',
@@ -59,11 +62,13 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 					'orders.deleted_at',
 					'customers.name as customer_name',
 					'branches.name as branch_name',
+					'deleters.name as deleted_by_name',
 				]),
 
 			'expenses' => Expense::onlyTrashed()
 				->leftJoin('expense_categories', 'expenses.expense_category_id', '=', 'expense_categories.id')
 				->leftJoin('branches', 'expenses.branch_id', '=', 'branches.id')
+				->leftJoin('users as deleters', 'expenses.deleted_by', '=', 'deleters.id')
 				->select([
 					'expenses.id',
 					'expenses.description',
@@ -73,10 +78,12 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 					'expenses.deleted_at',
 					'expense_categories.name as category_name',
 					'branches.name as branch_name',
+					'deleters.name as deleted_by_name',
 				]),
 
 			'customers' => Customer::onlyTrashed()
 				->leftJoin('branches', 'customers.branch_id', '=', 'branches.id')
+				->leftJoin('users as deleters', 'customers.deleted_by', '=', 'deleters.id')
 				->select([
 					'customers.id',
 					'customers.name',
@@ -85,10 +92,12 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 					'customers.created_at',
 					'customers.deleted_at',
 					'branches.name as branch_name',
+					'deleters.name as deleted_by_name',
 				]),
 
 			'services' => Service::onlyTrashed()
 				->leftJoin('service_categories', 'services.category_id', '=', 'service_categories.id')
+				->leftJoin('users as deleters', 'services.deleted_by', '=', 'deleters.id')
 				->select([
 					'services.id',
 					'services.name',
@@ -96,10 +105,12 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 					'services.created_at',
 					'services.deleted_at',
 					'service_categories.name as category_name',
+					'deleters.name as deleted_by_name',
 				]),
 
 			'machines' => Machine::onlyTrashed()
 				->leftJoin('branches', 'machines.branch_id', '=', 'branches.id')
+				->leftJoin('users as deleters', 'machines.deleted_by', '=', 'deleters.id')
 				->select([
 					'machines.id',
 					'machines.name',
@@ -107,6 +118,7 @@ class DeletedRecordsController extends Controller implements HasMiddleware
 					'machines.created_at',
 					'machines.deleted_at',
 					'branches.name as branch_name',
+					'deleters.name as deleted_by_name',
 				]),
 
 			default => abort(422, 'Unknown type.'),

@@ -10,18 +10,18 @@ use Laravel\Sanctum\Sanctum;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
-function delLogSetup(string $role): Branch
+function delLogSetup(string $role): array
 {
     $branch = Branch::create(['name' => 'Main', 'is_active' => true]);
     $user   = User::factory()->create(['role' => $role]);
     $user->branches()->attach($branch->id, ['is_primary' => true]);
     Sanctum::actingAs($user);
 
-    return $branch;
+    return [$branch, $user];
 }
 
 it('shows deleted payments in the audit log', function () {
-    $branch = delLogSetup('super_admin');
+    [$branch, $user] = delLogSetup('super_admin');
 
     $category = ServiceCategory::create(['name' => 'Wash Cat', 'load_rule' => 'quantity']);
     $service  = Service::create([
@@ -50,10 +50,11 @@ it('shows deleted payments in the audit log', function () {
     expect($res['data'][0]['customer_name'])->toBe('Juan');
     expect($res['data'][0]['branch_name'])->toBe('Main');
     expect($res['data'][0]['deleted_at'])->not->toBeNull();
+    expect($res['data'][0]['deleted_by_name'])->toBe($user->name);
 });
 
 it('shows deleted customers and rejects unknown types', function () {
-    $branch = delLogSetup('super_admin');
+    [$branch] = delLogSetup('super_admin');
 
     $customer = Customer::create(['branch_id' => $branch->id, 'name' => 'Maria', 'phone' => '09170000001']);
     $customer->delete();
@@ -68,7 +69,7 @@ it('shows deleted customers and rejects unknown types', function () {
 });
 
 it('forbids non-super-admins', function () {
-    $branch = delLogSetup('admin');
+    [$branch] = delLogSetup('admin');
 
     $this->getJson('/api/deleted-records?type=payments', ['X-Branch-Id' => $branch->id])
         ->assertForbidden();
