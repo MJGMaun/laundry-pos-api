@@ -89,6 +89,36 @@ class CashBalanceController extends Controller
                 'customers.name as customer_name',
             ]);
 
+        // Orders made in this range that still owe money — explains the gap
+        // between orders taken and cash actually collected. Net paid counts
+        // payments minus refunds, excluding soft-deleted payments.
+        $netPaidSql = "COALESCE((SELECT SUM(CASE WHEN p.type = 'payment' THEN p.amount ELSE -p.amount END)
+            FROM payments p WHERE p.order_id = orders.id AND p.deleted_at IS NULL), 0)";
+
+        $unpaid = DB::table('orders')
+            ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
+            ->where('orders.branch_id', $branchId)
+            ->whereNull('orders.deleted_at')
+            ->whereDate('orders.created_at', '>=', $dateFrom)
+            ->whereDate('orders.created_at', '<=', $dateTo)
+            ->whereRaw("{$netPaidSql} < orders.total_amount")
+            ->orderBy('orders.created_at')
+            ->selectRaw("
+                orders.id as order_id,
+                orders.order_number,
+                orders.total_amount,
+                orders.created_at,
+                customers.name as customer_name,
+                {$netPaidSql} as net_paid
+            ")
+            ->get()
+            ->map(function ($row) {
+                $row->balance_due = round((float) $row->total_amount - (float) $row->net_paid, 2);
+                return $row;
+            });
+
+        $unpaidTotal = round($unpaid->sum('balance_due'), 2);
+
         $startingBalance = (float) ($record?->starting_balance ?? 0);
         $cashNet         = round($net['cash'], 2);
         $gcashNet        = round($net['gcash'], 2);
@@ -114,6 +144,8 @@ class CashBalanceController extends Controller
             'to_remit_cash'    => $toRemitCash,
             'to_remit_gcash'   => $toRemitGcash,
             'payments'         => $payments,
+            'unpaid'           => $unpaid,
+            'unpaid_total'     => $unpaidTotal,
         ]);
     }
 
