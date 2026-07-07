@@ -185,4 +185,68 @@ class LoyaltyService
         $reward->redeemed_on_order_id  = $orderId;
         $reward->save();
     }
+
+    /**
+     * Recompute an order's free-load loyalty discount from scratch and redeem any
+     * pending free-load rewards the order can still absorb.
+     *
+     * A free load discounts one loyalty-eligible load unit; the reward always
+     * covers the cheapest eligible loads across the whole order. Recomputing from
+     * the current loads (rather than adding to the stored discount) keeps the
+     * total correct and never double-discounts when loads are added over time.
+     *
+     * Assumes discount_amount is the loyalty discount only (the app has no other
+     * discount source).
+     */
+    public function reconcileFreeLoadDiscount(Order $order): void
+    {
+        if ($order->customer_id === null) {
+            return;
+        }
+
+        // Per-unit price of every loyalty-eligible load in the order, cheapest
+        // first. Each unit is one redeemable free load (matching the POS/stamp
+        // logic, which counts one stamp per eligible load unit).
+        $order->load('loads.service');
+        $eligibleUnits = [];
+        foreach ($order->loads as $load) {
+            if (! $load->service || ! $load->service->is_loyalty_eligible) {
+                continue;
+            }
+            $units = max(1, (int) floor((float) $load->quantity));
+            for ($i = 0; $i < $units; $i++) {
+                $eligibleUnits[] = (float) $load->unit_price_snapshot;
+            }
+        }
+        sort($eligibleUnits);
+        $poolSize = count($eligibleUnits);
+
+        // Free-load rewards already tied to this order (e.g. redeemed at checkout).
+        $redeemedHere = LoyaltyReward::where('redeemed_on_order_id', $order->id)
+            ->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
+            ->count();
+
+        // Pending free-load rewards we could still redeem for this customer.
+        $pending = LoyaltyReward::where('customer_id', $order->customer_id)
+            ->where('branch_id', $order->branch_id)
+            ->whereNull('redeemed_at')
+            ->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
+            ->latest('earned_at')
+            ->get();
+
+        // Only redeem as many as the order still has eligible loads to cover.
+        $toRedeem = max(0, min($pending->count(), $poolSize - $redeemedHere));
+        foreach ($pending->take($toRedeem) as $reward) {
+            $reward->redeemed_at          = now();
+            $reward->redeemed_on_order_id = $order->id;
+            $reward->save();
+        }
+
+        $freeLoads = min($poolSize, $redeemedHere + $toRedeem);
+        $discount  = array_sum(array_slice($eligibleUnits, 0, $freeLoads));
+
+        $order->discount_amount = round($discount, 2);
+        $order->total_amount    = round($order->subtotal + $order->extra_fees - $order->discount_amount, 2);
+        $order->save();
+    }
 }
