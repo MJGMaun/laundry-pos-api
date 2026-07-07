@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\MachineCycleCountController;
 use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
 use App\Http\Controllers\Api\DataManagementController;
+use App\Http\Controllers\Api\DeletedRecordsController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\MessageController;
 
@@ -53,6 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
 	Route::get('branches/{branch}/users',                            [BranchController::class, 'users']);
 	Route::post('branches/{branch}/users',                           [BranchController::class, 'assignUser']);
 	Route::delete('branches/{branch}/users/{user}',                  [BranchController::class, 'removeUser']);
+
+	// Deleted-records audit log (super_admin only via controller middleware)
+	Route::get('deleted-records', [DeletedRecordsController::class, 'index']);
 
 	// Data Management (super_admin only)
 	Route::get('branches/{branch}/data-counts',                      [DataManagementController::class, 'counts']);
