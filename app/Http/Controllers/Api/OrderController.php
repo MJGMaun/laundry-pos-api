@@ -238,22 +238,31 @@ class OrderController extends Controller implements HasMiddleware
 	public function update(Request $request, Order $order)
 	{
 		$validated = $request->validate([
-			'discount_amount'      => 'sometimes|numeric|min:0',
-			'extra_fees'           => 'sometimes|numeric|min:0',
-			'notes'                => 'sometimes|nullable|string',
-			'status'               => 'sometimes|in:pending,ready,claimed,completed',
-			'estimated_ready_at'   => 'sometimes|nullable|date',
-			'delivery_scheduled_at' => 'sometimes|nullable|date',
+			'discount_amount'        => 'sometimes|numeric|min:0',
+			'manual_discount_amount' => 'sometimes|numeric|min:0',
+			'extra_fees'             => 'sometimes|numeric|min:0',
+			'notes'                  => 'sometimes|nullable|string',
+			'status'                 => 'sometimes|in:pending,ready,claimed,completed',
+			'estimated_ready_at'     => 'sometimes|nullable|date',
+			'delivery_scheduled_at'  => 'sometimes|nullable|date',
 		]);
 
+		// The additional discount is an admin correction tool, not a cashier feature.
+		if (isset($validated['manual_discount_amount'])
+			&& ! in_array($request->user()->role, ['super_admin', 'admin'])) {
+			return response()->json(['message' => 'Only admins can set an additional discount.'], 403);
+		}
+
 		DB::transaction(function () use ($validated, $order) {
-			$recalculate = isset($validated['discount_amount']) || isset($validated['extra_fees']);
+			$recalculate = isset($validated['discount_amount'])
+				|| isset($validated['manual_discount_amount'])
+				|| isset($validated['extra_fees']);
 
 			$order->fill($validated);
 
 			if ($recalculate) {
 				$order->total_amount = round(
-					$order->subtotal + $order->extra_fees - $order->discount_amount,
+					$order->subtotal + $order->extra_fees - $order->discount_amount - $order->manual_discount_amount,
 					2
 				);
 			}
@@ -336,8 +345,10 @@ class OrderController extends Controller implements HasMiddleware
 		}
 
 		DB::transaction(function () use ($order, $user) {
-			// Reverse any loyalty stamps this order earned before removing it.
-			$this->loyaltyService->reverseOrderStamps($order, $user->id);
+			// Restore rewards this order redeemed, reverse its stamps, and
+			// revoke unspent rewards it unlocked — so the customer's loyalty
+			// state ends up as if the order never happened.
+			$this->loyaltyService->reverseOrderLoyalty($order, $user->id);
 
 			// Reverse total_spent: net of payments minus refunds.
 			if ($order->customer_id) {

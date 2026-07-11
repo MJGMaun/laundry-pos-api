@@ -89,9 +89,32 @@ class LoyaltyService
     }
 
     /**
+     * Undo everything an order did to the customer's loyalty state (used when
+     * the order is deleted): rewards it redeemed go back to pending, its stamps
+     * are reversed, and unspent rewards its stamps unlocked are revoked. This
+     * keeps delete-and-retry idempotent — re-ringing the same order neither
+     * loses the customer's reward nor double-grants one.
+     */
+    public function reverseOrderLoyalty(Order $order, ?int $userId): void
+    {
+        if ($order->customer_id === null) {
+            return;
+        }
+
+        // Un-spend rewards redeemed on this order first, so a reward both
+        // earned and spent here becomes pending and is then revoked below.
+        LoyaltyReward::where('redeemed_on_order_id', $order->id)
+            ->whereNotNull('redeemed_at')
+            ->update(['redeemed_at' => null, 'redeemed_on_order_id' => null]);
+
+        $this->reverseOrderStamps($order, $userId);
+    }
+
+    /**
      * Reverse the stamps an order earned (e.g. when the order is deleted).
-     * Clamped so it never drives the balance below zero. Does not revoke
-     * rewards already granted, mirroring manual negative adjustments.
+     * Clamped so it never drives the balance below zero. Pending rewards whose
+     * threshold is un-crossed by the removal are revoked; rewards already
+     * spent on another order stay spent.
      */
     public function reverseOrderStamps(Order $order, ?int $userId): void
     {
@@ -122,6 +145,34 @@ class LoyaltyService
             'note'          => "Reversed stamps from deleted order #{$order->order_number}",
             'created_by'    => $userId,
         ]);
+
+        $this->revokeUncrossedRewards($order->customer_id, $order->branch_id, $current, $current - $remove);
+    }
+
+    /**
+     * Delete pending rewards whose stamp threshold is no longer crossed after
+     * stamps were removed. Only pending rewards are touched — a reward already
+     * spent on another order stays spent (mirrors the stamp clamping).
+     */
+    private function revokeUncrossedRewards(int $customerId, int $branchId, int $previousTotal, int $newTotal): void
+    {
+        foreach (LoyaltyRule::where('branch_id', $branchId)->active()->get() as $rule) {
+            $lost = (int) floor($previousTotal / $rule->every_n_stamps)
+                  - (int) floor($newTotal / $rule->every_n_stamps);
+
+            if ($lost <= 0) {
+                continue;
+            }
+
+            LoyaltyReward::where('customer_id', $customerId)
+                ->where('branch_id', $branchId)
+                ->where('rule_id', $rule->id)
+                ->whereNull('redeemed_at')
+                ->latest('earned_at')
+                ->limit($lost)
+                ->get()
+                ->each->delete();
+        }
     }
 
     private function generateRewards(int $customerId, int $branchId, int $previousTotal, int $newTotal): void
@@ -195,8 +246,8 @@ class LoyaltyService
      * the current loads (rather than adding to the stored discount) keeps the
      * total correct and never double-discounts when loads are added over time.
      *
-     * Assumes discount_amount is the loyalty discount only (the app has no other
-     * discount source).
+     * discount_amount is the loyalty discount only — admin additional discounts
+     * live in manual_discount_amount so this recompute never wipes them.
      */
     public function reconcileFreeLoadDiscount(Order $order): void
     {
@@ -246,7 +297,10 @@ class LoyaltyService
         $discount  = array_sum(array_slice($eligibleUnits, 0, $freeLoads));
 
         $order->discount_amount = round($discount, 2);
-        $order->total_amount    = round($order->subtotal + $order->extra_fees - $order->discount_amount, 2);
+        $order->total_amount    = round(
+            $order->subtotal + $order->extra_fees - $order->discount_amount - $order->manual_discount_amount,
+            2
+        );
         $order->save();
     }
 }
