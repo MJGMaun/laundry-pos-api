@@ -80,9 +80,13 @@ class LoyaltyService
             'created_by'    => $userId,
         ]);
 
-        // Only positive adjustments can cross reward thresholds.
+        // Removing stamps can un-cross a reward threshold just like an order
+        // delete does — revoke any pending reward the new total no longer
+        // justifies. Adding stamps can only unlock new rewards, never revoke one.
         if ($delta > 0) {
             $this->generateRewards($customerId, $branchId, $current, $current + $delta);
+        } else {
+            $this->revokeUncrossedRewards($customerId, $branchId, $current, $current + $delta);
         }
 
         return $current + $delta;
