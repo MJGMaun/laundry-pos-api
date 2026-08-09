@@ -48,7 +48,8 @@ class ActivityController extends Controller implements HasMiddleware
 			$search = $request->search;
 			$query->where(function ($q) use ($search) {
 				$q->where('order_number', 'like', "%{$search}%")
-				  ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', "%{$search}%"));
+				  ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', "%{$search}%"))
+				  ->orWhereHas('loads', fn ($lq) => $lq->withTrashed()->where('service_name_snapshot', 'like', "%{$search}%"));
 			});
 		}
 

@@ -75,6 +75,15 @@ it('shows recent orders with loads and cashier to a super admin, hiding deleted 
     expect($deleted['loads'])->toHaveCount(1);
 });
 
+it('matches orders by the service name availed when searching', function () {
+    activityFeedSetup();
+
+    Sanctum::actingAs(User::factory()->create(['role' => 'super_admin']));
+
+    expect($this->getJson('/api/activity/orders?search=Wash')->assertOk()->json('total'))->toBe(2);
+    expect($this->getJson('/api/activity/orders?search=Dry+Clean')->assertOk()->json('total'))->toBe(0);
+});
+
 it('rejects non-super-admin users', function () {
     activityFeedSetup();
 
