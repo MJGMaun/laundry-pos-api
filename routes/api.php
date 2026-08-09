@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ServiceCategoryController;
 use App\Http\Controllers\Api\LoyaltyRuleController;
 use App\Http\Controllers\Api\CashBalanceController;
+use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\MachineController;
 use App\Http\Controllers\Api\MachineCycleCountController;
 use App\Http\Controllers\Api\LoyaltyController;
@@ -103,6 +104,12 @@ Route::middleware('auth:sanctum')->group(function () {
 		// Cash balance
 		Route::get('cash-balance',  [CashBalanceController::class, 'show']);
 		Route::post('cash-balance', [CashBalanceController::class, 'store']);
+
+		// Accounts — running cash/gcash balances and owner withdrawals
+		// (super_admin only via controller middleware)
+		Route::get('accounts',                        [AccountController::class, 'show']);
+		Route::post('account-movements',              [AccountController::class, 'store']);
+		Route::delete('account-movements/{movement}', [AccountController::class, 'destroy']);
 
 		// Machines & daily cycle counts (admin-only via controller middleware)
 		Route::apiResource('machines', MachineController::class)->except(['show']);
