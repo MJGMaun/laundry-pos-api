@@ -232,14 +232,95 @@ it('restores the balance when a movement is deleted', function () {
     expect((float) accountFor($after, 'cash')['balance'])->toBe(100.0);
 });
 
-it('is closed to admins below super admin', function () {
+it('breaks money in and out down by month', function () {
+    [$branch, $service, $customer, $user] = accountsSetup();
+
+    $thisMonth = now()->startOfMonth()->addDays(2);
+    $lastMonth = now()->subMonthNoOverflow()->startOfMonth()->addDays(3);
+
+    accountsPaidOrder($branch, $service, $customer, $thisMonth->toDateString());
+    accountsPaidOrder($branch, $service, $customer, $thisMonth->toDateString(), 'gcash');
+    accountsPaidOrder($branch, $service, $customer, $lastMonth->toDateString());
+
+    $category = ExpenseCategory::create(['name' => 'Supplies']);
+    Expense::create([
+        'branch_id'           => $branch->id,
+        'expense_category_id' => $category->id,
+        'user_id'             => $user->id,
+        'amount'              => 40,
+        'payment_method'      => 'cash',
+        'expense_date'        => $thisMonth->toDateString(),
+    ]);
+
+    $this->postJson('/api/account-movements', [
+        'type'        => 'withdrawal',
+        'method'      => 'cash',
+        'amount'      => 25,
+        'occurred_on' => $thisMonth->toDateString(),
+    ], ['X-Branch-Id' => $branch->id])->assertOk();
+
+    $months = $this->getJson('/api/accounts', ['X-Branch-Id' => $branch->id])
+        ->assertOk()->json('months');
+
+    // Newest first.
+    expect($months[0]['month'])->toBe(now()->format('Y-m'));
+    expect($months[1]['month'])->toBe(now()->subMonthNoOverflow()->format('Y-m'));
+
+    expect((float) $months[0]['cash_in'])->toBe(100.0);
+    expect((float) $months[0]['gcash_in'])->toBe(100.0);
+    expect((float) $months[0]['expenses'])->toBe(40.0);
+    expect((float) $months[0]['withdrawals'])->toBe(25.0);
+    // Withdrawals stay out of net — they are not a cost of the month.
+    expect((float) $months[0]['net'])->toBe(160.0);
+
+    expect((float) $months[1]['cash_in'])->toBe(100.0);
+    expect((float) $months[1]['net'])->toBe(100.0);
+});
+
+it('keeps monthly history visible after an opening balance seals the account', function () {
+    [$branch, $service, $customer] = accountsSetup();
+
+    accountsPaidOrder($branch, $service, $customer, now()->startOfMonth()->addDay()->toDateString());
+
+    Carbon::setTestNow(now()->addMinute());
+
+    $res = $this->postJson('/api/account-movements', [
+        'type'   => 'opening',
+        'method' => 'cash',
+        'amount' => 500,
+    ], ['X-Branch-Id' => $branch->id])->assertOk()->json();
+
+    // Sealed for the balance...
+    expect((float) accountFor($res, 'cash')['payments_in'])->toBe(0.0);
+    // ...but the month still reports what actually came in.
+    expect((float) $res['months'][0]['cash_in'])->toBe(100.0);
+});
+
+it('lets admins view and record movements', function () {
     [$branch] = accountsSetup('admin');
 
-    $this->getJson('/api/accounts', ['X-Branch-Id' => $branch->id])->assertStatus(403);
-    $this->postJson('/api/account-movements', [
+    $this->getJson('/api/accounts', ['X-Branch-Id' => $branch->id])->assertOk();
+
+    $res = $this->postJson('/api/account-movements', [
         'type'        => 'withdrawal',
         'method'      => 'cash',
         'amount'      => 10,
         'occurred_on' => now()->toDateString(),
-    ], ['X-Branch-Id' => $branch->id])->assertStatus(403);
+    ], ['X-Branch-Id' => $branch->id])->assertOk()->json();
+
+    expect((float) accountFor($res, 'cash')['withdrawals'])->toBe(10.0);
+});
+
+it('is closed to cashiers and staff', function () {
+    foreach (['cashier', 'staff'] as $role) {
+        [$branch] = accountsSetup($role);
+
+        $this->getJson('/api/accounts', ['X-Branch-Id' => $branch->id])->assertStatus(403);
+        $this->postJson('/api/account-movements', [
+            'type'        => 'withdrawal',
+            'method'      => 'cash',
+            'amount'      => 10,
+            'occurred_on' => now()->toDateString(),
+        ], ['X-Branch-Id' => $branch->id])->assertStatus(403);
+    }
 });

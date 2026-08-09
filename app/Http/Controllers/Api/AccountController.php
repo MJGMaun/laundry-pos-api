@@ -25,7 +25,7 @@ class AccountController extends Controller implements HasMiddleware
 	public static function middleware(): array
 	{
 		return [
-			new Middleware('role:super_admin'),
+			new Middleware('role:admin'),
 		];
 	}
 
@@ -60,6 +60,7 @@ class AccountController extends Controller implements HasMiddleware
 			'branch_id'     => $branchId,
 			'accounts'      => $accounts,
 			'total_balance' => round(array_sum(array_column($accounts, 'balance')), 2),
+			'months'        => $this->monthlyBreakdown($branchId),
 			'movements'     => $movements,
 		]);
 	}
@@ -119,6 +120,100 @@ class AccountController extends Controller implements HasMiddleware
 		$movement->delete();
 
 		return $this->show($request);
+	}
+
+	/**
+	 * Month-by-month money in and out for the last 12 months, newest first, so
+	 * comparing months takes no filtering at all. This is raw history and
+	 * deliberately ignores the opening-balance cutover — that only exists to
+	 * make today's balance match the drawer, and sealing it would erase the
+	 * months you want to look back at.
+	 *
+	 * Withdrawals are reported in their own column and left out of `net`:
+	 * taking profit out is a distribution, not a cost of the month.
+	 */
+	private function monthlyBreakdown(int $branchId): array
+	{
+		$start = now()->subMonths(11)->startOfMonth();
+		$from  = $start->toDateString();
+		$to    = now()->endOfMonth()->toDateString();
+
+		$paymentMonth = $this->monthExpression('payments.created_at');
+		$payments = DB::table('payments')
+			->join('orders', 'payments.order_id', '=', 'orders.id')
+			->where('orders.branch_id', $branchId)
+			->whereNull('payments.deleted_at')
+			->whereNull('orders.deleted_at')
+			->whereDate('payments.created_at', '>=', $from)
+			->whereDate('payments.created_at', '<=', $to)
+			->selectRaw("{$paymentMonth} as month, payments.method as method, COALESCE(SUM(CASE WHEN payments.type = 'refund' THEN -payments.amount ELSE payments.amount END), 0) as total")
+			->groupByRaw("{$paymentMonth}, payments.method")
+			->get();
+
+		$expenseMonth = $this->monthExpression('expense_date');
+		$expenses = DB::table('expenses')
+			->where('branch_id', $branchId)
+			->whereNull('deleted_at')
+			->whereDate('expense_date', '>=', $from)
+			->whereDate('expense_date', '<=', $to)
+			->selectRaw("{$expenseMonth} as month, SUM(amount) as total")
+			->groupByRaw($expenseMonth)
+			->pluck('total', 'month');
+
+		$drawMonth = $this->monthExpression('occurred_on');
+		$withdrawals = DB::table('account_movements')
+			->where('branch_id', $branchId)
+			->where('type', 'withdrawal')
+			->whereNull('deleted_at')
+			->whereDate('occurred_on', '>=', $from)
+			->whereDate('occurred_on', '<=', $to)
+			->selectRaw("{$drawMonth} as month, SUM(amount) as total")
+			->groupByRaw($drawMonth)
+			->pluck('total', 'month');
+
+		$paymentsByMonth = [];
+		foreach ($payments as $row) {
+			$paymentsByMonth[$row->month][$row->method] = (float) $row->total;
+		}
+
+		$currentMonth = now()->format('Y-m');
+		$rows = [];
+
+		for ($i = 0; $i < 12; $i++) {
+			$key     = $start->copy()->addMonths($i)->format('Y-m');
+			$cashIn  = $paymentsByMonth[$key]['cash'] ?? 0.0;
+			$gcashIn = $paymentsByMonth[$key]['gcash'] ?? 0.0;
+			$spent   = (float) ($expenses[$key] ?? 0);
+			$drawn   = (float) ($withdrawals[$key] ?? 0);
+
+			// Skip dead months so a young branch isn't padded with empty rows,
+			// but always keep the current one so the table is never blank.
+			if ($key !== $currentMonth && !$cashIn && !$gcashIn && !$spent && !$drawn) {
+				continue;
+			}
+
+			$rows[] = [
+				'month'       => $key,
+				'cash_in'     => round($cashIn, 2),
+				'gcash_in'    => round($gcashIn, 2),
+				'expenses'    => round($spent, 2),
+				'withdrawals' => round($drawn, 2),
+				'net'         => round($cashIn + $gcashIn - $spent, 2),
+			];
+		}
+
+		return array_reverse($rows);
+	}
+
+	/**
+	 * Group-by-month expression for the active driver — MySQL in production,
+	 * SQLite under test.
+	 */
+	private function monthExpression(string $column): string
+	{
+		return DB::connection()->getDriverName() === 'sqlite'
+			? "strftime('%Y-%m', {$column})"
+			: "DATE_FORMAT({$column}, '%Y-%m')";
 	}
 
 	/**
