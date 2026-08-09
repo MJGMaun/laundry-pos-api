@@ -7,6 +7,7 @@ use App\Models\ExpenseCategory;
 use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\User;
+use Carbon\Carbon;
 use Laravel\Sanctum\Sanctum;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -111,25 +112,69 @@ it('leaves profit and margin untouched when money is withdrawn', function () {
     expect($after['profit_margin_pct'])->toBe($before['profit_margin_pct']);
 });
 
-it('treats the opening balance as a cutover date', function () {
-    [$branch, $service, $customer] = accountsSetup();
-
-    $old   = now()->subDays(5)->toDateString();
+it('zeroes every counter when an opening balance is set', function () {
+    [$branch, $service, $customer, $user] = accountsSetup();
     $today = now()->toDateString();
 
-    accountsPaidOrder($branch, $service, $customer, $old);   // before cutover — ignored
-    accountsPaidOrder($branch, $service, $customer, $today); // after cutover — counted
+    // Everything below is recorded BEFORE the opening, so it is sealed into
+    // the counted figure rather than stacked on top of it.
+    accountsPaidOrder($branch, $service, $customer, $today);
+
+    $category = ExpenseCategory::create(['name' => 'Supplies']);
+    Expense::create([
+        'branch_id'           => $branch->id,
+        'expense_category_id' => $category->id,
+        'user_id'             => $user->id,
+        'amount'              => 30,
+        'payment_method'      => 'cash',
+        'expense_date'        => $today,
+    ]);
+
+    $this->postJson('/api/account-movements', [
+        'type'        => 'withdrawal',
+        'method'      => 'cash',
+        'amount'      => 20,
+        'occurred_on' => $today,
+    ], ['X-Branch-Id' => $branch->id])->assertOk();
+
+    Carbon::setTestNow(now()->addMinute());
 
     $res = $this->postJson('/api/account-movements', [
         'type'        => 'opening',
         'method'      => 'cash',
         'amount'      => 500,
-        'occurred_on' => now()->subDay()->toDateString(),
     ], ['X-Branch-Id' => $branch->id])->assertOk()->json();
 
     $cash = accountFor($res, 'cash');
     expect($cash['has_opening'])->toBeTrue();
+    expect($cash['cutover_at'])->not->toBeNull();
     expect((float) $cash['opening'])->toBe(500.0);
+    expect((float) $cash['payments_in'])->toBe(0.0);
+    expect((float) $cash['expenses'])->toBe(0.0);
+    expect((float) $cash['withdrawals'])->toBe(0.0);
+    expect((float) $cash['balance'])->toBe(500.0);
+});
+
+it('counts only what is recorded after the opening balance', function () {
+    [$branch, $service, $customer] = accountsSetup();
+
+    accountsPaidOrder($branch, $service, $customer, now()->toDateString()); // sealed
+
+    Carbon::setTestNow(now()->addMinute());
+
+    $this->postJson('/api/account-movements', [
+        'type'   => 'opening',
+        'method' => 'cash',
+        'amount' => 500,
+    ], ['X-Branch-Id' => $branch->id])->assertOk();
+
+    Carbon::setTestNow(now()->addMinute());
+
+    accountsPaidOrder($branch, $service, $customer, now()->toDateString()); // counts
+
+    $res = $this->getJson('/api/accounts', ['X-Branch-Id' => $branch->id])->assertOk()->json();
+
+    $cash = accountFor($res, 'cash');
     expect((float) $cash['payments_in'])->toBe(100.0);
     expect((float) $cash['balance'])->toBe(600.0);
 });

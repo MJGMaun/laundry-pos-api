@@ -83,13 +83,22 @@ class AccountController extends Controller implements HasMiddleware
 			// An opening balance of zero is meaningful ("started empty"); every
 			// other movement has to actually move something.
 			'amount'      => ['required', 'numeric', $request->input('type') === 'opening' ? 'min:0' : 'min:0.01'],
-			'occurred_on' => 'required|date_format:Y-m-d',
+			// An opening is always stamped with today below, so it needs no date.
+			'occurred_on' => 'required_unless:type,opening|nullable|date_format:Y-m-d',
 			'recipient'   => 'nullable|string|max:100',
 			'note'        => 'nullable|string|max:500',
 		]);
 
 		if ($validated['type'] !== 'transfer') {
 			$validated['to_method'] = null;
+		}
+
+		// An opening balance is counted here and now — it seals whatever is
+		// already recorded, so it always carries today's date and the exact
+		// instant it was saved. Any date the client sent is ignored.
+		if ($validated['type'] === 'opening') {
+			$validated['occurred_on']  = now()->toDateString();
+			$validated['effective_at'] = now();
 		}
 
 		$validated['branch_id'] = $branchId;
@@ -117,12 +126,11 @@ class AccountController extends Controller implements HasMiddleware
 	 * collected in that method, minus expenses paid from it, minus withdrawals,
 	 * plus money put back in, adjusted for transfers between accounts.
 	 *
-	 * The opening balance is also the cutover: only activity from its date
-	 * onward counts, so a branch that has been running for months can start
-	 * from a real counted figure instead of replaying all history. Its date is
-	 * inclusive — the opening balance is what was on hand at the START of that
-	 * day. With no opening set, everything on record is summed and the payload
-	 * flags it via has_opening.
+	 * The opening balance is a clean slate: it seals everything recorded up to
+	 * the instant it was saved, so the moment it lands the balance equals the
+	 * counted figure exactly and every other line reads zero. Only records
+	 * entered afterwards move it. With no opening set, everything on record is
+	 * summed and the payload flags it via has_opening.
 	 */
 	private function buildAccount(int $branchId, string $method, string $asOf): array
 	{
@@ -134,7 +142,10 @@ class AccountController extends Controller implements HasMiddleware
 			->orderByDesc('id')
 			->first();
 
-		$since = $opening?->occurred_on?->toDateString();
+		// The cutover is when the opening was saved, not the day it covers: a
+		// figure counted at 3pm must not have that morning's payments added
+		// back on top of it.
+		$cutover = $opening?->effective_at;
 
 		// Payments are stamped by created_at; expenses carry their own date.
 		$paymentsIn = (float) DB::table('payments')
@@ -144,7 +155,7 @@ class AccountController extends Controller implements HasMiddleware
 			->whereNull('payments.deleted_at')
 			->whereNull('orders.deleted_at')
 			->whereDate('payments.created_at', '<=', $asOf)
-			->when($since, fn ($q) => $q->whereDate('payments.created_at', '>=', $since))
+			->when($cutover, fn ($q) => $q->where('payments.created_at', '>', $cutover))
 			->selectRaw("COALESCE(SUM(CASE WHEN payments.type = 'refund' THEN -payments.amount ELSE payments.amount END), 0) as total")
 			->value('total');
 
@@ -153,13 +164,13 @@ class AccountController extends Controller implements HasMiddleware
 			->where('payment_method', $method)
 			->whereNull('deleted_at')
 			->whereDate('expense_date', '<=', $asOf)
-			->when($since, fn ($q) => $q->whereDate('expense_date', '>=', $since))
+			->when($cutover, fn ($q) => $q->where('expenses.created_at', '>', $cutover))
 			->sum('amount');
 
 		// Every movement touching this account, as source or as transfer target.
 		$movements = AccountMovement::where('branch_id', $branchId)
 			->whereDate('occurred_on', '<=', $asOf)
-			->when($since, fn ($q) => $q->whereDate('occurred_on', '>=', $since))
+			->when($cutover, fn ($q) => $q->where('created_at', '>', $cutover))
 			->where(fn ($q) => $q->where('method', $method)->orWhere('to_method', $method))
 			->get();
 
@@ -207,7 +218,8 @@ class AccountController extends Controller implements HasMiddleware
 			'method'       => $method,
 			'has_opening'  => $opening !== null,
 			'opening'      => round($openingAmount, 2),
-			'opening_date' => $since,
+			'opening_date' => $opening?->occurred_on?->toDateString(),
+			'cutover_at'   => $cutover?->toIso8601String(),
 			'payments_in'  => round($paymentsIn, 2),
 			'expenses'     => round($expensesOut, 2),
 			'withdrawals'  => round($withdrawals, 2),

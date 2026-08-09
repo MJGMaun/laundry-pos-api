@@ -17,14 +17,16 @@ class AccountMovement extends Model
 		'to_method',
 		'amount',
 		'occurred_on',
+		'effective_at',
 		'recipient',
 		'note',
 		'user_id',
 	];
 
 	protected $casts = [
-		'amount'      => 'decimal:2',
-		'occurred_on' => 'date:Y-m-d',
+		'amount'       => 'decimal:2',
+		'occurred_on'  => 'date:Y-m-d',
+		'effective_at' => 'datetime',
 	];
 
 	public function user()
