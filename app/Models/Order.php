@@ -85,6 +85,16 @@ class Order extends Model
 		return $this->belongsTo(User::class);
 	}
 
+	public function branch()
+	{
+		return $this->belongsTo(Branch::class);
+	}
+
+	public function deletedBy()
+	{
+		return $this->belongsTo(User::class, 'deleted_by');
+	}
+
 	public function loads()
 	{
 		return $this->hasMany(Load::class);

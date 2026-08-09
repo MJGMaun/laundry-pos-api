@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\PublicLoyaltyController;
 use App\Http\Controllers\Api\DataManagementController;
 use App\Http\Controllers\Api\DeletedRecordsController;
+use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\MessageController;
 
@@ -57,6 +58,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
 	// Deleted-records audit log (super_admin only via controller middleware)
 	Route::get('deleted-records', [DeletedRecordsController::class, 'index']);
+
+	// Cross-branch activity feed (super_admin only via controller middleware)
+	Route::get('activity/orders', [ActivityController::class, 'orders']);
 
 	// Data Management (super_admin only)
 	Route::get('branches/{branch}/data-counts',                      [DataManagementController::class, 'counts']);
