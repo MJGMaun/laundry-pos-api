@@ -51,9 +51,11 @@ class ExpenseController extends Controller implements HasMiddleware
 			}
 		};
 
+		$perPage = min((int) ($request->per_page ?? 20), 500);
+
 		$expensesQuery = Expense::with('category', 'user');
 		$applyFilters($expensesQuery);
-		$expenses = $expensesQuery->orderBy('expense_date', 'desc')->paginate(20);
+		$expenses = $expensesQuery->orderBy('expense_date', 'desc')->paginate($perPage);
 
 		$totalsQuery = Expense::query();
 		$applyFilters($totalsQuery);
