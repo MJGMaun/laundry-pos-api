@@ -66,6 +66,8 @@ class MessageController extends Controller
 			'type' => $conversation->type,
 			'title' => $title,
 			'other' => $other ? ['id' => $other->id, 'name' => $other->name, 'username' => $other->username] : null,
+			// Super admins see DMs from every branch at once, so name the branch.
+			'branch_name' => $me->isSuperAdmin() ? optional($conversation->branch)->name : null,
 			'last_message' => $last ? [
 				'body' => $last->body,
 				'sender_id' => $last->user_id,
@@ -85,9 +87,14 @@ class MessageController extends Controller
 		// Ensure the branch group exists and the user is in it.
 		$this->branchConversation($branchId);
 
-		$conversations = Conversation::where('branch_id', $branchId)
+		$conversations = Conversation::query()
 			->whereHas('participants', fn ($q) => $q->whereKey($me->id))
-			->with(['participants', 'latestMessage'])
+			// A DM to a super admin is filed under the sender's branch, so
+			// scoping them to the selected branch would hide it until the super
+			// admin happened to switch there. Show all of their DMs instead.
+			->where(fn ($q) => $q->where('branch_id', $branchId)
+				->when($me->isSuperAdmin(), fn ($w) => $w->orWhere('type', 'direct')))
+			->with(['participants', 'latestMessage', 'branch:id,name'])
 			->get()
 			->sortByDesc(fn ($c) => $c->type === 'branch' ? PHP_INT_MAX : optional($c->latestMessage)->created_at?->timestamp ?? $c->updated_at->timestamp)
 			->values();
@@ -161,12 +168,20 @@ class MessageController extends Controller
 		$target = User::where('username', $data['username'])->first();
 		abort_if(! $target || $target->id === $me->id, 422, 'No such user to message.');
 
-		// Same-branch only: the target must belong to the active branch.
 		$shares = DB::table('branch_user')
 			->where('branch_id', $branchId)
 			->where('user_id', $target->id)
 			->exists();
-		abort_unless($shares, 403, 'You can only message people in your branch.');
+
+		// Branch members can always reach each other. Beyond that: a super admin
+		// may message anyone, and anyone may message a super admin — the latter
+		// only works if you already know the exact username, since super admins
+		// are left out of user search.
+		abort_unless(
+			$shares || $me->isSuperAdmin() || $target->isSuperAdmin(),
+			403,
+			'You can only message people in your branch.'
+		);
 
 		// Find an existing direct conversation in this branch with exactly these two.
 		$conversation = Conversation::where('type', 'direct')
@@ -180,7 +195,7 @@ class MessageController extends Controller
 			$conversation->participants()->attach([$me->id, $target->id]);
 		}
 
-		$conversation->load(['participants', 'latestMessage']);
+		$conversation->load(['participants', 'latestMessage', 'branch:id,name']);
 
 		return response()->json(['data' => $this->presentConversation($conversation, $me)]);
 	}
@@ -192,8 +207,12 @@ class MessageController extends Controller
 		$me = $request->user();
 		$q = trim((string) $request->query('q', ''));
 
-		$users = User::whereIn('id', DB::table('branch_user')->where('branch_id', $branchId)->pluck('user_id'))
-			->where('id', '!=', $me->id)
+		$users = User::where('id', '!=', $me->id)
+			// A super admin can message anyone, so they search across all branches.
+			// Everyone else browses their own branch, with super admins withheld.
+			->when(! $me->isSuperAdmin(), fn ($query) => $query
+				->whereIn('id', DB::table('branch_user')->where('branch_id', $branchId)->pluck('user_id'))
+				->where('role', '!=', 'super_admin'))
 			->when($q !== '', fn ($query) => $query->where(fn ($w) => $w
 				->where('username', 'like', "%{$q}%")
 				->orWhere('name', 'like', "%{$q}%")))
@@ -201,7 +220,20 @@ class MessageController extends Controller
 			->limit(10)
 			->get(['id', 'name', 'username', 'role']);
 
-		return response()->json(['data' => $users]);
+		// Typing a super admin's exact username surfaces them even though they
+		// are unlisted — support stays reachable by whoever knows the handle.
+		if ($q !== '' && ! $me->isSuperAdmin()) {
+			$hidden = User::where('username', $q)
+				->where('role', 'super_admin')
+				->where('id', '!=', $me->id)
+				->first(['id', 'name', 'username', 'role']);
+
+			if ($hidden && ! $users->contains('id', $hidden->id)) {
+				$users->prepend($hidden);
+			}
+		}
+
+		return response()->json(['data' => $users->values()]);
 	}
 
 	// GET /messages/unread-count
@@ -216,7 +248,10 @@ class MessageController extends Controller
 			->join('conversation_user as cu', 'cu.conversation_id', '=', 'messages.conversation_id')
 			->join('conversations as c', 'c.id', '=', 'messages.conversation_id')
 			->where('cu.user_id', $me->id)
-			->where('c.branch_id', $branchId)
+			// Mirrors conversations(): a super admin's DMs count no matter which
+			// branch they were opened from.
+			->where(fn ($w) => $w->where('c.branch_id', $branchId)
+				->when($me->isSuperAdmin(), fn ($s) => $s->orWhere('c.type', 'direct')))
 			->where('messages.user_id', '!=', $me->id)
 			->where(fn ($w) => $w->whereNull('cu.last_read_at')->orWhereColumn('messages.created_at', '>', 'cu.last_read_at'))
 			->count();
