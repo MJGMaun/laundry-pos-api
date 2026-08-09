@@ -41,11 +41,16 @@ class BranchController extends Controller implements HasMiddleware
 		$dsGlobal    = Setting::whereNull('branch_id')->where('key', 'day_summary_enabled')->value('value');
 		$dsOverrides = Setting::whereNotNull('branch_id')->where('key', 'day_summary_enabled')->pluck('value', 'branch_id');
 
+		// Staff access is opt-in: Day Summary stays admin-only unless turned on.
+		$dssGlobal    = Setting::whereNull('branch_id')->where('key', 'day_summary_staff_enabled')->value('value');
+		$dssOverrides = Setting::whereNotNull('branch_id')->where('key', 'day_summary_staff_enabled')->pluck('value', 'branch_id');
+
 		$pdGlobal    = Setting::whereNull('branch_id')->where('key', 'pickup_delivery_enabled')->value('value');
 		$pdOverrides = Setting::whereNotNull('branch_id')->where('key', 'pickup_delivery_enabled')->pluck('value', 'branch_id');
 
-		$branches->each(function ($b) use ($dsGlobal, $dsOverrides, $pdGlobal, $pdOverrides) {
+		$branches->each(function ($b) use ($dsGlobal, $dsOverrides, $dssGlobal, $dssOverrides, $pdGlobal, $pdOverrides) {
 			$b->day_summary_enabled       = ($dsOverrides[$b->id] ?? $dsGlobal ?? 'true') !== 'false';
+			$b->day_summary_staff_enabled = ($dssOverrides[$b->id] ?? $dssGlobal ?? 'false') === 'true';
 			$b->pickup_delivery_enabled   = ($pdOverrides[$b->id] ?? $pdGlobal ?? 'true') !== 'false';
 		});
 

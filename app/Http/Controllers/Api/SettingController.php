@@ -39,10 +39,11 @@ class SettingController extends Controller implements HasMiddleware
 
 		// general
 		'day_summary_enabled'       => ['group' => 'general', 'rules' => 'required|in:true,false'],
+		'day_summary_staff_enabled' => ['group' => 'general', 'rules' => 'required|in:true,false'],
 	];
 
 	// Settings only a super admin may change (regular admins are blocked).
-	private const SUPER_ADMIN_ONLY = ['day_summary_enabled'];
+	private const SUPER_ADMIN_ONLY = ['day_summary_enabled', 'day_summary_staff_enabled'];
 
 	// GET /api/settings?group=shop
 	// Returns global settings merged with branch overrides (branch wins per key)
