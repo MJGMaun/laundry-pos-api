@@ -6,10 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\DailyCashBalance;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\DB;
 
-class CashBalanceController extends Controller
+class CashBalanceController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            // Day Summary is built on these same figures, so either page grants
+            // the read. Setting the float belongs to Cash Balance alone.
+            new Middleware('page:cash-balance|day-summary,view'),
+            new Middleware('page:cash-balance,edit', only: ['store']),
+        ];
+    }
+
     /**
      * Applies the branch filter, including the all-branches case a super admin
      * gets when no branch is picked. That case has to be explicit: comparing

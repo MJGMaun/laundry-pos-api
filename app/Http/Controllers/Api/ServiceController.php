@@ -92,7 +92,7 @@ class ServiceController extends Controller implements HasMiddleware
 	public static function middleware(): array
 	{
 		return [
-			new Middleware('role:admin', only: ['store', 'destroy', 'update', 'toggle']),
+			new Middleware('page:services,edit', only: ['store', 'destroy', 'update', 'toggle']),
 			// new Middleware('role:admin,cashier', only: []),
 		];
 	}

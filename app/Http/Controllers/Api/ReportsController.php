@@ -18,7 +18,7 @@ class ReportsController extends Controller implements HasMiddleware
 	{
 		return [
 			new Middleware('role:super_admin', only: ['branchComparison']),
-			new Middleware('role:admin'),
+			new Middleware('page:reports,view'),
 		];
 	}
 

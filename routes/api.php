@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\ServiceCategoryController;
 use App\Http\Controllers\Api\LoyaltyRuleController;
 use App\Http\Controllers\Api\CashBalanceController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\PageAccessController;
 use App\Http\Controllers\Api\MachineController;
 use App\Http\Controllers\Api\MachineCycleCountController;
 use App\Http\Controllers\Api\LoyaltyController;
@@ -42,20 +43,26 @@ Route::middleware('auth:sanctum')->group(function () {
 	});
 
 	// Services (global, not branch-scoped)
-	Route::apiResource('services', ServiceController::class);
-	Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
+	Route::middleware('branch')->group(function () {
+		Route::apiResource('services', ServiceController::class);
+		Route::patch('services/{service}/toggle', [ServiceController::class, 'toggle']);
+	});
 
 	// Service categories (global)
-	Route::apiResource('service-categories', ServiceCategoryController::class)->except(['show']);
+	Route::apiResource('service-categories', ServiceCategoryController::class)->except(['show'])->middleware('branch');
 
 	// Expense categories (global, not branch-scoped)
-	Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'destroy']);
+	Route::apiResource('expense-categories', ExpenseCategoryController::class)->only(['index', 'store', 'destroy'])->middleware('branch');
 
 	// Branches (management — no branch context needed)
 	Route::apiResource('branches', BranchController::class)->except(['show']);
 	Route::get('branches/{branch}/users',                            [BranchController::class, 'users']);
 	Route::post('branches/{branch}/users',                           [BranchController::class, 'assignUser']);
 	Route::delete('branches/{branch}/users/{user}',                  [BranchController::class, 'removeUser']);
+
+	// Per-branch page access matrix (super_admin only via controller middleware)
+	Route::get('branches/{branch}/page-access',  [PageAccessController::class, 'show']);
+	Route::put('branches/{branch}/page-access',  [PageAccessController::class, 'update']);
 
 	// Deleted-records audit log (super_admin only via controller middleware)
 	Route::get('deleted-records', [DeletedRecordsController::class, 'index']);
@@ -73,6 +80,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
 	// Branch-scoped routes
 	Route::middleware('branch')->group(function () {
+		// What this user may reach at the active branch (drives menu + guards)
+		Route::get('my-page-access', [PageAccessController::class, 'mine']);
+
 		// Users
 		Route::apiResource('users', UserController::class);
 

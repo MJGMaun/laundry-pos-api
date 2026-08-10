@@ -16,7 +16,7 @@ class LoyaltyRuleController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('role:admin', only: ['store', 'update', 'destroy']),
+            new Middleware('page:loyalty,edit', only: ['store', 'update', 'destroy']),
         ];
     }
 

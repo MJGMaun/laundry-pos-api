@@ -15,7 +15,7 @@ class SettingController extends Controller implements HasMiddleware
 	{
 		return [
 			// Reading settings is needed by all roles (including cashier) for offline caching
-			new Middleware('role:admin', only: ['update']),
+			new Middleware('page:settings,edit', only: ['update']),
 		];
 	}
 

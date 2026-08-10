@@ -14,7 +14,8 @@ class ExpenseController extends Controller implements HasMiddleware
 	public static function middleware(): array
 	{
 		return [
-			new Middleware('role:admin'),
+			new Middleware('page:expenses,view'),
+			new Middleware('page:expenses,edit', only: ['store', 'update', 'destroy']),
 		];
 	}
 

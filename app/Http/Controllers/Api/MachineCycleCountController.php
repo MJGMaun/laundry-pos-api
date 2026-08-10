@@ -15,7 +15,8 @@ class MachineCycleCountController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('role:admin'),
+            new Middleware('page:machine-cycles,view'),
+            new Middleware('page:machine-cycles,edit', only: ['store']),
         ];
     }
 

@@ -25,7 +25,8 @@ class AccountController extends Controller implements HasMiddleware
 	public static function middleware(): array
 	{
 		return [
-			new Middleware('role:admin'),
+			new Middleware('page:accounts,view'),
+			new Middleware('page:accounts,edit', only: ['store', 'destroy']),
 		];
 	}
 

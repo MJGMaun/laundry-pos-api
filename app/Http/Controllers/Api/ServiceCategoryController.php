@@ -51,7 +51,7 @@ class ServiceCategoryController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('role:admin', only: ['store', 'update', 'destroy']),
+            new Middleware('page:services,edit', only: ['store', 'update', 'destroy']),
         ];
     }
 }

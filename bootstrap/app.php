@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
             'role'     => \App\Http\Middleware\CheckRole::class,
             'branch'   => \App\Http\Middleware\SetBranchContext::class,
+            'page'     => \App\Http\Middleware\CheckPageAccess::class,
         ]);
 
         //
