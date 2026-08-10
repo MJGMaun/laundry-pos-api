@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -24,6 +25,10 @@ class ExpenseController extends Controller implements HasMiddleware
 		$applyFilters = function ($query) use ($request, $branchId) {
 			if ($branchId !== null) {
 				$query->where('branch_id', $branchId);
+			} else {
+				// All-branches view mirrors the reports: test branches stay out,
+				// so the dashboard's expense total matches Reports.
+				$query->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
 			}
 
 			if ($request->filled('category_id')) {
@@ -57,11 +62,12 @@ class ExpenseController extends Controller implements HasMiddleware
 		$applyFilters($expensesQuery);
 		$expenses = $expensesQuery->orderBy('expense_date', 'desc')->paginate($perPage);
 
+		$monthExpr   = $this->monthExpression('expense_date');
 		$totalsQuery = Expense::query();
 		$applyFilters($totalsQuery);
 		$monthlyTotals = $totalsQuery
-			->selectRaw("DATE_FORMAT(expense_date, '%Y-%m') as month, SUM(amount) as total")
-			->groupByRaw("DATE_FORMAT(expense_date, '%Y-%m')")
+			->selectRaw("{$monthExpr} as month, SUM(amount) as total")
+			->groupByRaw($monthExpr)
 			->orderBy('month', 'desc')
 			->get();
 

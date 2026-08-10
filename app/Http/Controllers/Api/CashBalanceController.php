@@ -3,12 +3,28 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\DailyCashBalance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class CashBalanceController extends Controller
 {
+    /**
+     * Applies the branch filter, including the all-branches case a super admin
+     * gets when no branch is picked. That case has to be explicit: comparing
+     * `branch_id = NULL` is never true in SQL, so every total silently came
+     * back as zero. Test branches are excluded, matching ReportsController.
+     */
+    private function scopeBranch($query, ?int $branchId, string $column = 'branch_id')
+    {
+        if ($branchId !== null) {
+            return $query->where($column, $branchId);
+        }
+
+        return $query->whereNotIn($column, Branch::where('is_test', true)->pluck('id'));
+    }
+
     public function show(Request $request): \Illuminate\Http\JsonResponse
     {
         // Single day by default; date_from/date_to select a range. The
@@ -22,15 +38,33 @@ class CashBalanceController extends Controller
         $isRange  = $dateFrom !== $dateTo;
         $branchId = $this->branchId($request);
 
-        $record = $isRange ? null : DailyCashBalance::where('branch_id', $branchId)
-            ->where('date', $dateFrom)
-            ->with('setBy:id,name')
-            ->first();
+        // The starting float is per-branch and per-day. With a branch picked we
+        // show that branch's record and who set it; across all branches the
+        // only meaningful figure is the sum of their floats.
+        $record          = null;
+        $startingBalance = 0.0;
+
+        if (!$isRange) {
+            if ($branchId !== null) {
+                $record = DailyCashBalance::where('branch_id', $branchId)
+                    ->whereDate('date', $dateFrom)
+                    ->with('setBy:id,name')
+                    ->first();
+                $startingBalance = (float) ($record?->starting_balance ?? 0);
+            } else {
+                $startingBalance = (float) $this->scopeBranch(
+                    DailyCashBalance::whereDate('date', $dateFrom),
+                    $branchId
+                )->sum('starting_balance');
+            }
+        }
 
         // Net per-method totals (payments minus refunds)
-        $rows = DB::table('payments')
-            ->join('orders', 'payments.order_id', '=', 'orders.id')
-            ->where('orders.branch_id', $branchId)
+        $rows = $this->scopeBranch(
+            DB::table('payments')->join('orders', 'payments.order_id', '=', 'orders.id'),
+            $branchId,
+            'orders.branch_id'
+        )
             ->whereDate('payments.created_at', '>=', $dateFrom)
             ->whereDate('payments.created_at', '<=', $dateTo)
             ->whereNull('payments.deleted_at')
@@ -48,8 +82,7 @@ class CashBalanceController extends Controller
         }
 
         // Expenses for this range, split by payment method
-        $expenseRows = DB::table('expenses')
-            ->where('branch_id', $branchId)
+        $expenseRows = $this->scopeBranch(DB::table('expenses'), $branchId)
             ->whereBetween('expense_date', [$dateFrom, $dateTo])
             ->whereNull('deleted_at')
             ->select('payment_method', DB::raw('SUM(amount) as total'))
@@ -68,10 +101,13 @@ class CashBalanceController extends Controller
         $expenses = $cashExpenses + $gcashExpenses;
 
         // Itemized payments for this range — which order/customer made up the totals.
-        $payments = DB::table('payments')
-            ->join('orders', 'payments.order_id', '=', 'orders.id')
-            ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
-            ->where('orders.branch_id', $branchId)
+        $payments = $this->scopeBranch(
+            DB::table('payments')
+                ->join('orders', 'payments.order_id', '=', 'orders.id')
+                ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id'),
+            $branchId,
+            'orders.branch_id'
+        )
             ->whereDate('payments.created_at', '>=', $dateFrom)
             ->whereDate('payments.created_at', '<=', $dateTo)
             ->whereNull('payments.deleted_at')
@@ -95,9 +131,11 @@ class CashBalanceController extends Controller
         $netPaidSql = "COALESCE((SELECT SUM(CASE WHEN p.type = 'payment' THEN p.amount ELSE -p.amount END)
             FROM payments p WHERE p.order_id = orders.id AND p.deleted_at IS NULL), 0)";
 
-        $unpaid = DB::table('orders')
-            ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
-            ->where('orders.branch_id', $branchId)
+        $unpaid = $this->scopeBranch(
+            DB::table('orders')->leftJoin('customers', 'orders.customer_id', '=', 'customers.id'),
+            $branchId,
+            'orders.branch_id'
+        )
             ->whereNull('orders.deleted_at')
             ->whereDate('orders.created_at', '>=', $dateFrom)
             ->whereDate('orders.created_at', '<=', $dateTo)
@@ -119,7 +157,6 @@ class CashBalanceController extends Controller
 
         $unpaidTotal = round($unpaid->sum('balance_due'), 2);
 
-        $startingBalance = (float) ($record?->starting_balance ?? 0);
         $cashNet         = round($net['cash'], 2);
         $gcashNet        = round($net['gcash'], 2);
         $totalInDrawer   = round($startingBalance + $cashNet - $cashExpenses, 2);
@@ -156,9 +193,19 @@ class CashBalanceController extends Controller
             'starting_balance' => 'required|numeric|min:0',
         ]);
 
+        $branchId = $this->branchId($request);
+
+        // A float belongs to one drawer, so there is nothing to write while
+        // viewing all branches.
+        if ($branchId === null) {
+            return response()->json([
+                'message' => 'Select a branch before setting its starting balance.',
+            ], 422);
+        }
+
         DailyCashBalance::updateOrCreate(
             [
-                'branch_id' => $this->branchId($request),
+                'branch_id' => $branchId,
                 'date'      => $validated['date'],
             ],
             [

@@ -206,17 +206,6 @@ class AccountController extends Controller implements HasMiddleware
 	}
 
 	/**
-	 * Group-by-month expression for the active driver — MySQL in production,
-	 * SQLite under test.
-	 */
-	private function monthExpression(string $column): string
-	{
-		return DB::connection()->getDriverName() === 'sqlite'
-			? "strftime('%Y-%m', {$column})"
-			: "DATE_FORMAT({$column}, '%Y-%m')";
-	}
-
-	/**
 	 * Balance for one account = its opening balance, plus every payment
 	 * collected in that method, minus expenses paid from it, minus withdrawals,
 	 * plus money put back in, adjusted for transfers between accounts.
