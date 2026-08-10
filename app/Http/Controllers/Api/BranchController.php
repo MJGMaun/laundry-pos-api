@@ -48,10 +48,15 @@ class BranchController extends Controller implements HasMiddleware
 		$pdGlobal    = Setting::whereNull('branch_id')->where('key', 'pickup_delivery_enabled')->value('value');
 		$pdOverrides = Setting::whereNotNull('branch_id')->where('key', 'pickup_delivery_enabled')->pluck('value', 'branch_id');
 
-		$branches->each(function ($b) use ($dsGlobal, $dsOverrides, $dssGlobal, $dssOverrides, $pdGlobal, $pdOverrides) {
+		// Branches serving walk-ins can drop the phone requirement. Default on.
+		$cpGlobal    = Setting::whereNull('branch_id')->where('key', 'customer_phone_required')->value('value');
+		$cpOverrides = Setting::whereNotNull('branch_id')->where('key', 'customer_phone_required')->pluck('value', 'branch_id');
+
+		$branches->each(function ($b) use ($dsGlobal, $dsOverrides, $dssGlobal, $dssOverrides, $pdGlobal, $pdOverrides, $cpGlobal, $cpOverrides) {
 			$b->day_summary_enabled       = ($dsOverrides[$b->id] ?? $dsGlobal ?? 'true') !== 'false';
 			$b->day_summary_staff_enabled = ($dssOverrides[$b->id] ?? $dssGlobal ?? 'false') === 'true';
 			$b->pickup_delivery_enabled   = ($pdOverrides[$b->id] ?? $pdGlobal ?? 'true') !== 'false';
+			$b->customer_phone_required   = ($cpOverrides[$b->id] ?? $cpGlobal ?? 'true') !== 'false';
 		});
 
 		return response()->json($branches);

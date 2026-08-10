@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -17,6 +18,41 @@ class CustomerController extends Controller implements HasMiddleware
 			new Middleware('role:admin,cashier,staff', only: ['store', 'update']),
 			new Middleware('role:admin', only: ['destroy']),
 		];
+	}
+
+	/**
+	 * Whether this branch demands a phone number on new customers. Default on;
+	 * a branch override beats the global value, matching how every other
+	 * per-branch toggle resolves.
+	 */
+	private function phoneRequired(?int $branchId): bool
+	{
+		$value = Setting::where('key', 'customer_phone_required')
+			->where(function ($q) use ($branchId) {
+				$q->whereNull('branch_id');
+				if ($branchId) {
+					$q->orWhere('branch_id', $branchId);
+				}
+			})
+			->orderByDesc('branch_id')
+			->value('value');
+
+		return $value !== 'false';
+	}
+
+	/**
+	 * An omitted phone must be stored as NULL, never ''. The unique index on
+	 * (branch_id, phone) treats NULLs as distinct but empty strings as equal,
+	 * so a second phone-less customer in the same branch would be rejected as
+	 * a duplicate.
+	 */
+	private function normalisePhone(array $validated): array
+	{
+		if (array_key_exists('phone', $validated) && trim((string) $validated['phone']) === '') {
+			$validated['phone'] = null;
+		}
+
+		return $validated;
 	}
 
 	public function index(Request $request)
@@ -55,7 +91,8 @@ class CustomerController extends Controller implements HasMiddleware
 			],
 			'username'            => 'nullable|string|max:255',
 			'phone'               => [
-				'required', 'string', 'max:20',
+				$this->phoneRequired($branchId) ? 'required' : 'nullable',
+				'string', 'max:20',
 				Rule::unique('customers', 'phone')
 					->where(fn($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at')),
 			],
@@ -65,6 +102,7 @@ class CustomerController extends Controller implements HasMiddleware
 			'loyalty_card_number' => 'nullable|string|unique:customers,loyalty_card_number',
 		]);
 
+		$validated = $this->normalisePhone($validated);
 		$validated['branch_id'] = $branchId;
 
 		// Auto-generate username from name if not provided
@@ -99,7 +137,10 @@ class CustomerController extends Controller implements HasMiddleware
 			],
 			'username'            => 'nullable|string|max:255',
 			'phone'               => [
-				'sometimes', 'string', 'max:20',
+				// 'required' alongside 'sometimes' means: if sent, it may not be
+				// blanked out — a branch that demands phones keeps its existing ones.
+				'sometimes', $this->phoneRequired($branchId) ? 'required' : 'nullable',
+				'string', 'max:20',
 				Rule::unique('customers', 'phone')
 					->where(fn($q) => $q->where('branch_id', $branchId)->whereNull('deleted_at'))
 					->ignore($customer->id),
@@ -113,7 +154,7 @@ class CustomerController extends Controller implements HasMiddleware
 			'total_spent'         => 'sometimes|numeric|min:0',
 		]);
 
-		$customer->update($validated);
+		$customer->update($this->normalisePhone($validated));
 
 		return response()->json($customer);
 	}

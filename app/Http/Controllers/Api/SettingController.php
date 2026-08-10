@@ -40,6 +40,8 @@ class SettingController extends Controller implements HasMiddleware
 		// general
 		'day_summary_enabled'       => ['group' => 'general', 'rules' => 'required|in:true,false'],
 		'day_summary_staff_enabled' => ['group' => 'general', 'rules' => 'required|in:true,false'],
+		'pickup_delivery_enabled'   => ['group' => 'general', 'rules' => 'required|in:true,false'],
+		'customer_phone_required'   => ['group' => 'general', 'rules' => 'required|in:true,false'],
 	];
 
 	// Settings only a super admin may change (regular admins are blocked).
