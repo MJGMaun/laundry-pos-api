@@ -25,7 +25,7 @@ class LoyaltyController extends Controller
         $rules = LoyaltyRule::where('branch_id', $branchId)
             ->active()
             ->orderBy('every_n_stamps')
-            ->get(['id', 'every_n_stamps', 'reward_type', 'reward_description']);
+            ->get(['id', 'every_n_stamps', 'reward_type', 'reward_amount', 'reward_description']);
 
         $rewards = $this->loyaltyService->getPendingRewards($customer->id, $branchId);
 

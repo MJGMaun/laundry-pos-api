@@ -81,10 +81,10 @@ class LoadController extends Controller implements HasMiddleware
 					(int) floor($eligibleNewStamps)
 				);
 
-				// Newly awarded stamps may unlock free loads; redeem what this
-				// order can absorb and recompute its discount from the cheapest
-				// eligible loads (existing + newly added).
-				$this->loyaltyService->reconcileFreeLoadDiscount($order);
+				// Newly awarded stamps may unlock rewards; redeem what this order
+				// can absorb and recompute its discount over the eligible loads
+				// (existing + newly added).
+				$this->loyaltyService->reconcileLoyaltyDiscount($order);
 			}
 		});
 

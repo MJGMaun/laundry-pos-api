@@ -23,9 +23,9 @@ class PublicLoyaltyController extends Controller
         $rules = LoyaltyRule::where('branch_id', $branchId)
             ->active()
             ->orderBy('every_n_stamps')
-            ->get(['id', 'every_n_stamps', 'reward_type', 'reward_description']);
+            ->get(['id', 'every_n_stamps', 'reward_type', 'reward_amount', 'reward_description']);
 
-        $pendingRewards = LoyaltyReward::with('rule:id,reward_description,reward_type')
+        $pendingRewards = LoyaltyReward::with('rule:id,reward_description,reward_type,reward_amount')
             ->where('customer_id', $customer->id)
             ->where('branch_id', $branchId)
             ->pending()

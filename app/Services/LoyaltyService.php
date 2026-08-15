@@ -242,63 +242,123 @@ class LoyaltyService
     }
 
     /**
-     * Recompute an order's free-load loyalty discount from scratch and redeem any
-     * pending free-load rewards the order can still absorb.
+     * Per-unit price of every loyalty-eligible load in the order, cheapest
+     * first. Each unit is one redeemable free load (matching the POS/stamp
+     * logic, which counts one stamp per eligible load unit).
+     */
+    private function eligibleUnits(Order $order): array
+    {
+        $order->load('loads.service');
+
+        $units = [];
+        foreach ($order->loads as $load) {
+            if (! $load->service || ! $load->service->is_loyalty_eligible) {
+                continue;
+            }
+            $count = max(1, (int) floor((float) $load->quantity));
+            for ($i = 0; $i < $count; $i++) {
+                $units[] = (float) $load->unit_price_snapshot;
+            }
+        }
+        sort($units);
+
+        return $units;
+    }
+
+    /**
+     * Recompute an order's loyalty discount from scratch and redeem any pending
+     * rewards the order can still absorb.
      *
-     * A free load discounts one loyalty-eligible load unit; the reward always
-     * covers the cheapest eligible loads across the whole order. Recomputing from
-     * the current loads (rather than adding to the stored discount) keeps the
-     * total correct and never double-discounts when loads are added over time.
+     * Two reward types put money back: a free load covers one loyalty-eligible
+     * load unit (always the cheapest remaining, so the reward takes the smallest
+     * bite), and a fixed discount takes its rule's flat peso amount. Either way
+     * the total is capped at the eligible-load value of the order — the reward
+     * discounts the services that earn stamps, never fees or ineligible items,
+     * and it never turns into change.
+     *
+     * Recomputing from the current loads (rather than adding to the stored
+     * discount) keeps the total correct and never double-discounts when loads
+     * are added over time.
      *
      * discount_amount is the loyalty discount only — admin additional discounts
      * live in manual_discount_amount so this recompute never wipes them.
      */
-    public function reconcileFreeLoadDiscount(Order $order): void
+    public function reconcileLoyaltyDiscount(Order $order): void
     {
         if ($order->customer_id === null) {
             return;
         }
 
-        // Per-unit price of every loyalty-eligible load in the order, cheapest
-        // first. Each unit is one redeemable free load (matching the POS/stamp
-        // logic, which counts one stamp per eligible load unit).
-        $order->load('loads.service');
-        $eligibleUnits = [];
-        foreach ($order->loads as $load) {
-            if (! $load->service || ! $load->service->is_loyalty_eligible) {
-                continue;
+        $units    = $this->eligibleUnits($order);
+        $cap      = array_sum($units);
+        $nextUnit = 0;   // cheapest eligible unit a free load hasn't claimed yet
+        $discount = 0.0;
+
+        // What this reward is worth against what's left, or null if it doesn't
+        // fit. Free loads consume a unit; fixed discounts take their amount.
+        $valueOf = function (LoyaltyReward $reward) use (&$nextUnit, &$discount, $units, $cap): ?float {
+            $rule = $reward->rule;
+            if (! $rule) {
+                return null;
             }
-            $units = max(1, (int) floor((float) $load->quantity));
-            for ($i = 0; $i < $units; $i++) {
-                $eligibleUnits[] = (float) $load->unit_price_snapshot;
+
+            if ($rule->reward_type === 'free_load') {
+                if ($nextUnit >= count($units)) {
+                    return null;
+                }
+                $value = $units[$nextUnit];
+            } else {
+                $value = (float) $rule->reward_amount;
+                if ($value <= 0) {
+                    return null;
+                }
             }
+
+            // A reward is spent whole or not at all — no partial redemption, so
+            // an order too small to absorb it leaves it pending for next time.
+            if (round($discount + $value, 2) > round($cap, 2)) {
+                return null;
+            }
+
+            if ($rule->reward_type === 'free_load') {
+                $nextUnit++;
+            }
+
+            return $value;
+        };
+
+        // Rewards already tied to this order (e.g. redeemed at checkout) are
+        // already spent, so they price first and keep their claim on the
+        // cheapest units.
+        $redeemedHere = LoyaltyReward::with('rule')
+            ->where('redeemed_on_order_id', $order->id)
+            ->whereHas('rule', fn($q) => $q->whereIn('reward_type', LoyaltyRule::DISCOUNT_TYPES))
+            ->get();
+
+        foreach ($redeemedHere as $reward) {
+            $discount += $valueOf($reward) ?? 0.0;
         }
-        sort($eligibleUnits);
-        $poolSize = count($eligibleUnits);
 
-        // Free-load rewards already tied to this order (e.g. redeemed at checkout).
-        $redeemedHere = LoyaltyReward::where('redeemed_on_order_id', $order->id)
-            ->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
-            ->count();
-
-        // Pending free-load rewards we could still redeem for this customer.
-        $pending = LoyaltyReward::where('customer_id', $order->customer_id)
+        // Then anything still pending that the order can still absorb.
+        $pending = LoyaltyReward::with('rule')
+            ->where('customer_id', $order->customer_id)
             ->where('branch_id', $order->branch_id)
             ->whereNull('redeemed_at')
-            ->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
+            ->whereHas('rule', fn($q) => $q->whereIn('reward_type', LoyaltyRule::DISCOUNT_TYPES))
             ->latest('earned_at')
             ->get();
 
-        // Only redeem as many as the order still has eligible loads to cover.
-        $toRedeem = max(0, min($pending->count(), $poolSize - $redeemedHere));
-        foreach ($pending->take($toRedeem) as $reward) {
+        foreach ($pending as $reward) {
+            $value = $valueOf($reward);
+            if ($value === null) {
+                continue;
+            }
+
+            $discount += $value;
             $reward->redeemed_at          = now();
             $reward->redeemed_on_order_id = $order->id;
             $reward->save();
         }
-
-        $freeLoads = min($poolSize, $redeemedHere + $toRedeem);
-        $discount  = array_sum(array_slice($eligibleUnits, 0, $freeLoads));
 
         $order->discount_amount = round($discount, 2);
         $order->total_amount    = round(

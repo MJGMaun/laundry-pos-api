@@ -200,7 +200,7 @@ class OrderController extends Controller implements HasMiddleware
 				LoyaltyReward::where('customer_id', $order->customer_id)
 					->where('branch_id', $order->branch_id)
 					->whereNull('redeemed_at')
-					->whereHas('rule', fn($q) => $q->where('reward_type', 'free_load'))
+					->whereHas('rule', fn($q) => $q->whereIn('reward_type', \App\Models\LoyaltyRule::DISCOUNT_TYPES))
 					->latest('earned_at')
 					->limit($freeLoadsToRedeem)
 					->get()
