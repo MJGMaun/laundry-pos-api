@@ -123,6 +123,7 @@ class PageRegistry
             'cross-branch'    => self::locked('All Branches'),
             'activity'        => self::locked('Activity'),
             'deleted-records' => self::locked('Deleted Records'),
+            'gcash-matching'  => self::locked('GCash Matching'),
             'data-management' => self::locked('Data Management'),
             'pickup-queue'    => self::locked('Pickup Queue'),
         ];

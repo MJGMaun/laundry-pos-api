@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerBalanceController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\GcashMatchingController;
+use App\Http\Controllers\Api\AccountCheckController;
 use App\Http\Controllers\Api\LoadController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ExpenseCategoryController;
@@ -157,6 +159,17 @@ Route::middleware('auth:sanctum')->group(function () {
 		Route::post('orders/{order}/payments', [PaymentController::class, 'store']);
 		Route::get('payments', [PaymentController::class, 'all'])->middleware('role:admin');
 		Route::delete('payments/{payment}', [PaymentController::class, 'destroy'])->middleware('role:admin');
+		Route::get('payments/{payment}/receipt', [PaymentController::class, 'receipt']);
+		Route::patch('payments/{payment}/method', [PaymentController::class, 'changeMethod'])->middleware('role:admin');
+
+		// GCash reconciliation (super_admin only via controller middleware)
+		Route::get('gcash-matching',              [GcashMatchingController::class, 'index']);
+		Route::patch('payments/{payment}/matched', [GcashMatchingController::class, 'setMatched']);
+
+		// End-of-day account check (super_admin only via controller middleware)
+		Route::get('account-checks',             [AccountCheckController::class, 'index']);
+		Route::post('account-checks',            [AccountCheckController::class, 'store']);
+		Route::delete('account-checks/{check}',  [AccountCheckController::class, 'destroy']);
 
 		// Loyalty
 		Route::apiResource('loyalty-rules', LoyaltyRuleController::class)->except(['show']);

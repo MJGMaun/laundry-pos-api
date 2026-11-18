@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class PaymentController extends Controller implements HasMiddleware
 {
@@ -52,6 +53,10 @@ class PaymentController extends Controller implements HasMiddleware
             'tendered'         => 'nullable|numeric|min:0',
             'reference_number' => 'nullable|string|max:255',
             'payment_date'     => 'nullable|date|before_or_equal:today',
+            // Photo of the GCash receipt — the alternative to typing the reference.
+            'receipt'          => 'nullable|image|max:10240',
+            // Extra the customer sent on top of the amount applied to the order.
+            'tip_amount'       => 'nullable|numeric|min:0|max:100000',
         ]);
 
         // Only admins may backdate a payment; silently ignore for other roles.
@@ -73,6 +78,18 @@ class PaymentController extends Controller implements HasMiddleware
             }
         }
 
+        $tip = round((float) ($validated['tip_amount'] ?? 0), 2);
+        if ($tip > 0 && ($type !== 'payment' || $method === 'balance')) {
+            abort(422, 'A tip can only be added to a cash or GCash payment.');
+        }
+
+        // GCash needs proof that can be matched against the GCash app later:
+        // at least the last 4 characters of the reference, or a receipt photo.
+        if ($type === 'payment' && $method === 'gcash' && ! $request->hasFile('receipt')
+            && strlen(trim((string) ($validated['reference_number'] ?? ''))) < 4) {
+            abort(422, 'Enter at least the last 4 digits of the GCash reference number, or attach a photo of the receipt.');
+        }
+
         // Cash payments require a tendered amount >= the payment amount
         if ($type === 'payment' && $method === 'cash') {
             $request->validate([
@@ -81,7 +98,7 @@ class PaymentController extends Controller implements HasMiddleware
         }
 
 
-        $payment = DB::transaction(function () use ($validated, $order, $type, $amount, $request) {
+        $payment = DB::transaction(function () use ($validated, $order, $type, $amount, $request, $tip) {
             // For refunds: cannot refund more than what was actually paid (net)
             if ($type === 'refund') {
                 $existingPayments = $order->payments;
@@ -113,9 +130,13 @@ class PaymentController extends Controller implements HasMiddleware
                 'method'           => $validated['method'],
                 'type'             => $type,
                 'amount'           => $amount,
+                'tip_amount'       => $tip,
                 'tendered'         => $validated['tendered'] ?? null,
                 'change_amount'    => $changeAmount,
-                'reference_number' => $validated['reference_number'] ?? null,
+                'reference_number' => isset($validated['reference_number']) ? trim($validated['reference_number']) : null,
+                'receipt_path'     => $request->hasFile('receipt')
+                    ? $request->file('receipt')->store('payment-receipts/' . now()->format('Y/m'), 'local')
+                    : null,
             ]);
 
             // Admin backdating: cash balance / day summary key off the
@@ -215,7 +236,8 @@ class PaymentController extends Controller implements HasMiddleware
         $totals = (clone $query)
             ->selectRaw("
                 SUM(CASE WHEN payments.type = 'payment' THEN payments.amount ELSE 0 END) as total_paid,
-                SUM(CASE WHEN payments.type = 'refund' THEN payments.amount ELSE 0 END) as total_refunds
+                SUM(CASE WHEN payments.type = 'refund' THEN payments.amount ELSE 0 END) as total_refunds,
+                SUM(payments.tip_amount) as total_tips
             ")
             ->first();
 
@@ -226,6 +248,7 @@ class PaymentController extends Controller implements HasMiddleware
                 'payments.method',
                 'payments.type',
                 'payments.amount',
+                'payments.tip_amount',
                 'payments.reference_number',
                 'payments.created_at',
                 'orders.id as order_id',
@@ -244,8 +267,88 @@ class PaymentController extends Controller implements HasMiddleware
                 'total_paid'    => $totalPaid,
                 'total_refunds' => $totalRefunds,
                 'net'           => round($totalPaid - $totalRefunds, 2),
+                'total_tips'    => round((float) ($totals->total_tips ?? 0), 2),
             ],
         ] + $payments->toArray());
+    }
+
+    // GET /api/payments/{payment}/receipt — streams the GCash receipt photo.
+    // Private disk: receipts show names and numbers, so no public URL.
+    public function receipt(Request $request, Payment $payment)
+    {
+        $this->ensureBranch($request, $payment);
+
+        if (! $payment->receipt_path || ! Storage::disk('local')->exists($payment->receipt_path)) {
+            abort(404, 'No receipt photo for this payment.');
+        }
+
+        return Storage::disk('local')->response($payment->receipt_path);
+    }
+
+    // PATCH /api/payments/{payment}/method (admin-only via route middleware)
+    // Corrects a payment recorded under the wrong method — usually GCash
+    // tapped on what was really cash. Totals follow automatically since every
+    // report sums by method; the original method and who changed it are kept.
+    public function changeMethod(Request $request, Payment $payment)
+    {
+        $order = $this->ensureBranch($request, $payment);
+
+        $validated = $request->validate([
+            'method'           => 'required|in:cash,gcash',
+            'reference_number' => 'nullable|string|max:255',
+        ]);
+
+        if ($payment->method === 'balance') {
+            abort(422, 'A customer-balance payment cannot be switched. Delete it and record a new payment instead.');
+        }
+        if ($payment->method === $validated['method']) {
+            abort(422, 'This payment is already ' . strtoupper($validated['method']) . '.');
+        }
+
+        $reference = trim((string) ($validated['reference_number'] ?? ''));
+        if ($validated['method'] === 'gcash' && $payment->type === 'payment'
+            && strlen($reference) < 4 && ! $payment->receipt_path) {
+            abort(422, 'Enter at least the last 4 digits of the GCash reference number.');
+        }
+
+        $payment->fill([
+            'method'              => $validated['method'],
+            'method_changed_from' => $payment->method_changed_from ?? $payment->method,
+            'method_changed_by'   => $request->user()->id,
+            'method_changed_at'   => now(),
+            // A match was against the old account; it no longer holds.
+            'matched_at'          => null,
+            'matched_by'          => null,
+        ]);
+
+        if ($validated['method'] === 'cash') {
+            // Treat as exact cash: no change was handed back for it.
+            $payment->tendered      = $payment->type === 'payment' ? $payment->amount : null;
+            $payment->change_amount = $payment->type === 'payment' ? 0 : null;
+        } else {
+            $payment->tendered      = null;
+            $payment->change_amount = null;
+            if ($reference !== '') {
+                $payment->reference_number = $reference;
+            }
+        }
+
+        // created_at is untouched, so the payment stays on its business day.
+        $payment->save();
+
+        return response()->json(['data' => $payment->fresh()->load('methodChangedBy:id,name')]);
+    }
+
+    private function ensureBranch(Request $request, Payment $payment): Order
+    {
+        $order = $payment->order;
+        $branchId = $this->branchId($request);
+
+        if (! $order || ($branchId !== null && $order->branch_id !== $branchId)) {
+            abort(404);
+        }
+
+        return $order;
     }
 
     // Soft-delete a payment (admin-only via route middleware), reversing its
