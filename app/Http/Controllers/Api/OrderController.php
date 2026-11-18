@@ -81,6 +81,14 @@ class OrderController extends Controller implements HasMiddleware
 
 	public function store(Request $request)
 	{
+		// A super admin on "All branches" has no branch context; an order must
+		// belong to one branch (loyalty stamps, cash balance, reports all key off it).
+		if ($this->branchId($request) === null) {
+			return response()->json([
+				'message' => 'Select a branch before creating an order.',
+			], 422);
+		}
+
 		$validated = $request->validate([
 			'client_id'            => 'nullable|string|max:36',
 			'customer_id'          => 'required|exists:customers,id',
