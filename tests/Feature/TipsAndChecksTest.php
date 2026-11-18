@@ -95,3 +95,54 @@ it('keeps account checks super-admin only and branch-scoped', function () {
     [$branch] = tipSetup('admin');
     $this->getJson('/api/account-checks', ['X-Branch-Id' => $branch->id])->assertForbidden();
 });
+
+it('lets an admin add a missed tip to an existing payment', function () {
+    [$branch, $orderId] = tipSetup('admin');
+    $h = ['X-Branch-Id' => $branch->id];
+
+    $id = $this->postJson("/api/orders/{$orderId}/payments", [
+        'method' => 'gcash', 'amount' => 100, 'reference_number' => '1234',
+    ], $h)->assertCreated()->json('data.id');
+
+    $this->patchJson("/api/payments/{$id}/tip", ['tip_amount' => 48], $h)
+        ->assertOk()
+        ->assertJsonPath('data.tip_amount', '48.00');
+
+    $cash = $this->getJson('/api/cash-balance', $h)->assertOk();
+    expect((float) $cash->json('gcash_tips'))->toBe(48.0);
+    expect((float) $cash->json('gcash_in'))->toBe(100.0);
+
+    $gcash = collect($this->getJson('/api/accounts', $h)->json('accounts'))->firstWhere('method', 'gcash');
+    expect((float) $gcash['balance'])->toBe(148.0);
+    expect((float) $gcash['tips_held'])->toBe(48.0);
+});
+
+it('blocks cashiers from editing tips', function () {
+    [$branch, $orderId] = tipSetup('cashier');
+    $h = ['X-Branch-Id' => $branch->id];
+
+    $id = $this->postJson("/api/orders/{$orderId}/payments", [
+        'method' => 'gcash', 'amount' => 100, 'reference_number' => '1234',
+    ], $h)->json('data.id');
+
+    $this->patchJson("/api/payments/{$id}/tip", ['tip_amount' => 10], $h)->assertForbidden();
+});
+
+it('takes a tips payout out of the account and out of tips held', function () {
+    [$branch, $orderId] = tipSetup();
+    $h = ['X-Branch-Id' => $branch->id];
+
+    $this->postJson("/api/orders/{$orderId}/payments", [
+        'method' => 'gcash', 'amount' => 100, 'tip_amount' => 50, 'reference_number' => '1234',
+    ], $h)->assertCreated();
+
+    $res = $this->postJson('/api/account-movements', [
+        'type' => 'tip_payout', 'method' => 'gcash', 'amount' => 30,
+        'occurred_on' => now()->toDateString(), 'recipient' => 'Ana',
+    ], $h)->assertOk();
+
+    $gcash = collect($res->json('accounts'))->firstWhere('method', 'gcash');
+    expect((float) $gcash['balance'])->toBe(120.0);
+    expect((float) $gcash['tip_payouts'])->toBe(30.0);
+    expect((float) $gcash['tips_held'])->toBe(20.0);
+});
