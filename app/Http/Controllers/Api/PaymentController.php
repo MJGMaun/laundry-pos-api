@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\CustomerBalanceService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller implements HasMiddleware
 {
+    public function __construct(private CustomerBalanceService $balances) {}
+
     public static function middleware(): array
     {
         return [
@@ -43,7 +46,7 @@ class PaymentController extends Controller implements HasMiddleware
     public function store(Request $request, Order $order)
     {
         $validated = $request->validate([
-            'method'           => 'required|in:cash,gcash',
+            'method'           => 'required|in:cash,gcash,balance',
             'type'             => 'nullable|in:payment,refund',
             'amount'           => 'required|numeric|min:0.01',
             'tendered'         => 'nullable|numeric|min:0',
@@ -60,6 +63,16 @@ class PaymentController extends Controller implements HasMiddleware
         $method = $validated['method'];
         $amount = $validated['amount'];
 
+        // Customer balance (prepaid deposits) is admin-only and needs a customer.
+        if ($method === 'balance') {
+            if (! in_array($request->user()->role, ['super_admin', 'admin'])) {
+                abort(403, 'Only an admin can use customer balance.');
+            }
+            if (! $order->customer_id || ! $order->customer) {
+                abort(422, 'This order has no customer, so customer balance cannot be used.');
+            }
+        }
+
         // Cash payments require a tendered amount >= the payment amount
         if ($type === 'payment' && $method === 'cash') {
             $request->validate([
@@ -68,7 +81,7 @@ class PaymentController extends Controller implements HasMiddleware
         }
 
 
-        $payment = DB::transaction(function () use ($validated, $order, $type, $amount) {
+        $payment = DB::transaction(function () use ($validated, $order, $type, $amount, $request) {
             // For refunds: cannot refund more than what was actually paid (net)
             if ($type === 'refund') {
                 $existingPayments = $order->payments;
@@ -77,6 +90,16 @@ class PaymentController extends Controller implements HasMiddleware
 
                 if ($amount > $netPaid) {
                     abort(422, 'Refund amount exceeds net paid amount of ' . $netPaid);
+                }
+            }
+
+            // Balance is exact money with no change, so never take more than is owed.
+            if ($type === 'payment' && $validated['method'] === 'balance') {
+                $existing = $order->payments()->get();
+                $owed = (float) $order->total_amount
+                      - ($existing->where('type', 'payment')->sum('amount') - $existing->where('type', 'refund')->sum('amount'));
+                if ($amount > round($owed, 2) + 0.001) {
+                    abort(422, 'Amount is more than the order balance due of ' . number_format(max($owed, 0), 2));
                 }
             }
 
@@ -101,6 +124,10 @@ class PaymentController extends Controller implements HasMiddleware
             if (!empty($validated['payment_date'])) {
                 $payment->created_at = \Carbon\Carbon::parse($validated['payment_date'])->setTimeFrom(now());
                 $payment->save();
+            }
+
+            if ($payment->method === 'balance') {
+                $this->balances->recordPayment($payment, $order->customer, $order->branch_id, $request->user()->id);
             }
 
             // After recording, recalculate net paid
@@ -174,7 +201,7 @@ class PaymentController extends Controller implements HasMiddleware
             ->whereDate('payments.created_at', '>=', $dateFrom)
             ->whereDate('payments.created_at', '<=', $dateTo);
 
-        if (in_array($request->input('method'), ['cash', 'gcash'], true)) {
+        if (in_array($request->input('method'), ['cash', 'gcash', 'balance'], true)) {
             $query->where('payments.method', $request->input('method'));
         }
 
@@ -231,7 +258,12 @@ class PaymentController extends Controller implements HasMiddleware
             abort(404);
         }
 
-        DB::transaction(function () use ($payment, $order) {
+        DB::transaction(function () use ($payment, $order, $request) {
+            // Give back (or take back) customer balance a balance payment moved.
+            if ($payment->method === 'balance' && $order->customer) {
+                $this->balances->reversePayment($payment, $order->customer, $order->branch_id, $request->user()->id);
+            }
+
             // Reverse the customer spend recorded by store().
             if ($order->customer_id && $order->customer) {
                 if ($payment->type === 'payment') {

@@ -360,6 +360,17 @@ class OrderController extends Controller implements HasMiddleware
 				}
 			}
 
+			// Undo customer-balance payments/refunds on this order. Refunds first,
+			// so taking back store credit sees the balance before it is restored.
+			if ($order->customer) {
+				$balancePayments = $order->payments()->where('method', 'balance')->get()
+					->sortBy(fn ($p) => $p->type === 'refund' ? 0 : 1);
+				foreach ($balancePayments as $payment) {
+					app(\App\Services\CustomerBalanceService::class)
+						->reversePayment($payment, $order->customer, $order->branch_id, $user->id, 'Order deleted');
+				}
+			}
+
 			$order->loads()->each(fn($load) => $load->delete());
 			$order->payments()->delete();
 			$order->delete();

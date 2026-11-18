@@ -5,6 +5,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\CustomerBalanceController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\LoadController;
@@ -88,6 +89,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
 		// Customers
 		Route::apiResource('customers', CustomerController::class);
+
+		// Customer prepaid balance (admin-only via controller middleware)
+		Route::get('customers/{customer}/balance',                                [CustomerBalanceController::class, 'index']);
+		Route::post('customers/{customer}/balance/deposits',                      [CustomerBalanceController::class, 'deposit']);
+		Route::delete('customers/{customer}/balance/transactions/{transaction}',  [CustomerBalanceController::class, 'void']);
 
 		// Orders
 		Route::apiResource('orders', OrderController::class);
