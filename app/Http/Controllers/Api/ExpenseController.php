@@ -32,6 +32,10 @@ class ExpenseController extends Controller implements HasMiddleware
 				$query->whereNotIn('branch_id', Branch::where('is_test', true)->pluck('id'));
 			}
 
+			if (in_array($request->input('payment_method'), ['cash', 'gcash'], true)) {
+				$query->where('payment_method', $request->input('payment_method'));
+			}
+
 			if ($request->filled('category_id')) {
 				$query->where('expense_category_id', $request->category_id);
 			}
@@ -61,7 +65,15 @@ class ExpenseController extends Controller implements HasMiddleware
 
 		$expensesQuery = Expense::with('category', 'user');
 		$applyFilters($expensesQuery);
-		$expenses = $expensesQuery->orderBy('expense_date', 'desc')->paginate($perPage);
+		// sort: date_desc (default) | date_asc | amount_desc | amount_asc.
+		// id breaks ties so paging stays stable when values repeat.
+		[$sortCol, $sortDir] = match ($request->input('sort')) {
+			'date_asc'    => ['expense_date', 'asc'],
+			'amount_desc' => ['amount', 'desc'],
+			'amount_asc'  => ['amount', 'asc'],
+			default       => ['expense_date', 'desc'],
+		};
+		$expenses = $expensesQuery->orderBy($sortCol, $sortDir)->orderBy('id', $sortDir)->paginate($perPage);
 
 		$monthExpr   = $this->monthExpression('expense_date');
 		$totalsQuery = Expense::query();
