@@ -81,6 +81,14 @@ class OrderController extends Controller implements HasMiddleware
 
 	public function store(Request $request)
 	{
+		// A super admin on "All branches" has no branch context; an order must
+		// belong to one branch (loyalty stamps, cash balance, reports all key off it).
+		if ($this->branchId($request) === null) {
+			return response()->json([
+				'message' => 'Select a branch before creating an order.',
+			], 422);
+		}
+
 		$validated = $request->validate([
 			'client_id'            => 'nullable|string|max:36',
 			'customer_id'          => 'required|exists:customers,id',
@@ -357,6 +365,17 @@ class OrderController extends Controller implements HasMiddleware
 				           - $payments->where('type', 'refund')->sum('amount');
 				if ($netPaid > 0 && $order->customer) {
 					$order->customer->decrement('total_spent', $netPaid);
+				}
+			}
+
+			// Undo customer-balance payments/refunds on this order. Refunds first,
+			// so taking back store credit sees the balance before it is restored.
+			if ($order->customer) {
+				$balancePayments = $order->payments()->where('method', 'balance')->get()
+					->sortBy(fn ($p) => $p->type === 'refund' ? 0 : 1);
+				foreach ($balancePayments as $payment) {
+					app(\App\Services\CustomerBalanceService::class)
+						->reversePayment($payment, $order->customer, $order->branch_id, $user->id, 'Order deleted');
 				}
 			}
 

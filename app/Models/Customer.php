@@ -22,12 +22,14 @@ class Customer extends Model
 		'loyalty_points',
 		'total_visits',
 		'total_spent',
+		'balance',
 	];
 
 	protected $casts = [
 		'loyalty_points' => 'integer',
 		'total_visits' => 'integer',
 		'total_spent' => 'decimal:2',
+		'balance' => 'decimal:2',
 	];
 
 	// Relationships
@@ -39,6 +41,11 @@ class Customer extends Model
 	public function loyaltyTransactions()
 	{
 		return $this->hasMany(LoyaltyTransaction::class);
+	}
+
+	public function balanceTransactions()
+	{
+		return $this->hasMany(CustomerBalanceTransaction::class);
 	}
 
 	// Scopes

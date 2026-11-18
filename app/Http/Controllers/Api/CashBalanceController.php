@@ -85,13 +85,45 @@ class CashBalanceController extends Controller implements HasMiddleware
             ->groupBy('payments.method', 'payments.type')
             ->get();
 
-        $net = ['cash' => 0.0, 'gcash' => 0.0, 'maya' => 0.0, 'card' => 0.0];
+        $net = ['cash' => 0.0, 'gcash' => 0.0, 'maya' => 0.0, 'card' => 0.0, 'balance' => 0.0];
         foreach ($rows as $row) {
             $sign = $row->type === 'refund' ? -1 : 1;
             if (array_key_exists($row->method, $net)) {
                 $net[$row->method] += $sign * (float) $row->total;
             }
         }
+
+        // Customer deposits (prepaid balance): real money received, so they
+        // count toward the drawer and GCash, but not toward sales. Voided
+        // deposits net out through their reversal rows (same method).
+        $depositRows = $this->scopeBranch(DB::table('customer_balance_transactions'), $branchId)
+            ->whereNotNull('method')
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->select('method', DB::raw('SUM(amount) as total'))
+            ->groupBy('method')
+            ->pluck('total', 'method');
+        $cashDeposits  = round((float) ($depositRows['cash'] ?? 0), 2);
+        $gcashDeposits = round((float) ($depositRows['gcash'] ?? 0), 2);
+
+        $deposits = $this->scopeBranch(
+            DB::table('customer_balance_transactions as t')->join('customers', 't.customer_id', '=', 'customers.id'),
+            $branchId,
+            't.branch_id'
+        )
+            ->where('t.type', 'deposit')
+            ->whereDate('t.created_at', '>=', $dateFrom)
+            ->whereDate('t.created_at', '<=', $dateTo)
+            ->orderBy('t.created_at')
+            ->get([
+                't.id',
+                't.method',
+                't.amount',
+                't.voided_at',
+                't.created_at',
+                'customers.id as customer_id',
+                'customers.name as customer_name',
+            ]);
 
         // Expenses for this range, split by payment method
         $expenseRows = $this->scopeBranch(DB::table('expenses'), $branchId)
@@ -124,6 +156,8 @@ class CashBalanceController extends Controller implements HasMiddleware
             ->whereDate('payments.created_at', '<=', $dateTo)
             ->whereNull('payments.deleted_at')
             ->whereNull('orders.deleted_at')
+            // Paid from prepaid balance: no money changed hands today.
+            ->where('payments.method', '!=', 'balance')
             ->orderBy('payments.created_at')
             ->get([
                 'payments.id',
@@ -171,9 +205,9 @@ class CashBalanceController extends Controller implements HasMiddleware
 
         $cashNet         = round($net['cash'], 2);
         $gcashNet        = round($net['gcash'], 2);
-        $totalInDrawer   = round($startingBalance + $cashNet - $cashExpenses, 2);
+        $totalInDrawer   = round($startingBalance + $cashNet + $cashDeposits - $cashExpenses, 2);
         $toRemitCash     = round($totalInDrawer - $startingBalance, 2);
-        $toRemitGcash    = round($gcashNet - $gcashExpenses, 2);
+        $toRemitGcash    = round($gcashNet + $gcashDeposits - $gcashExpenses, 2);
 
         return response()->json([
             'date'             => $dateFrom,
@@ -186,6 +220,10 @@ class CashBalanceController extends Controller implements HasMiddleware
             'gcash_in'         => $gcashNet,
             'maya_in'          => round($net['maya'], 2),
             'card_in'          => round($net['card'], 2),
+            'cash_deposits'    => $cashDeposits,
+            'gcash_deposits'   => $gcashDeposits,
+            'deposits'         => $deposits,
+            'paid_from_balance'=> round($net['balance'], 2),
             'expenses'         => round($expenses, 2),
             'cash_expenses'    => round($cashExpenses, 2),
             'gcash_expenses'   => round($gcashExpenses, 2),

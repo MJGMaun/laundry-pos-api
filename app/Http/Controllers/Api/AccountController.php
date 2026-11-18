@@ -151,6 +151,16 @@ class AccountController extends Controller implements HasMiddleware
 			->groupByRaw("{$paymentMonth}, payments.method")
 			->get();
 
+		$depositMonth = $this->monthExpression('created_at');
+		$customerDeposits = DB::table('customer_balance_transactions')
+			->where('branch_id', $branchId)
+			->whereNotNull('method')
+			->whereDate('created_at', '>=', $from)
+			->whereDate('created_at', '<=', $to)
+			->selectRaw("{$depositMonth} as month, method, SUM(amount) as total")
+			->groupByRaw("{$depositMonth}, method")
+			->get();
+
 		$expenseMonth = $this->monthExpression('expense_date');
 		$expenses = DB::table('expenses')
 			->where('branch_id', $branchId)
@@ -175,6 +185,10 @@ class AccountController extends Controller implements HasMiddleware
 		$paymentsByMonth = [];
 		foreach ($payments as $row) {
 			$paymentsByMonth[$row->month][$row->method] = (float) $row->total;
+		}
+		// Deposits are money in for the account, so fold them into cash/gcash in.
+		foreach ($customerDeposits as $row) {
+			$paymentsByMonth[$row->month][$row->method] = ($paymentsByMonth[$row->month][$row->method] ?? 0.0) + (float) $row->total;
 		}
 
 		$currentMonth = now()->format('Y-m');
@@ -244,6 +258,15 @@ class AccountController extends Controller implements HasMiddleware
 			->selectRaw("COALESCE(SUM(CASE WHEN payments.type = 'refund' THEN -payments.amount ELSE payments.amount END), 0) as total")
 			->value('total');
 
+		// Customer deposits (prepaid balance) received into this account, net
+		// of voided ones (whose reversal rows carry the same method).
+		$customerDeposits = (float) DB::table('customer_balance_transactions')
+			->where('branch_id', $branchId)
+			->where('method', $method)
+			->whereDate('created_at', '<=', $asOf)
+			->when($cutover, fn ($q) => $q->where('created_at', '>', $cutover))
+			->sum('amount');
+
 		$expensesOut = (float) DB::table('expenses')
 			->where('branch_id', $branchId)
 			->where('payment_method', $method)
@@ -293,6 +316,7 @@ class AccountController extends Controller implements HasMiddleware
 
 		$balance = $openingAmount
 			+ $paymentsIn
+			+ $customerDeposits
 			- $expensesOut
 			- $withdrawals
 			+ $deposits
@@ -306,6 +330,7 @@ class AccountController extends Controller implements HasMiddleware
 			'opening_date' => $opening?->occurred_on?->toDateString(),
 			'cutover_at'   => $cutover?->toIso8601String(),
 			'payments_in'  => round($paymentsIn, 2),
+			'customer_deposits' => round($customerDeposits, 2),
 			'expenses'     => round($expensesOut, 2),
 			'withdrawals'  => round($withdrawals, 2),
 			'deposits'     => round($deposits, 2),
