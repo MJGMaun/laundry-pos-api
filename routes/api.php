@@ -161,6 +161,7 @@ Route::middleware('auth:sanctum')->group(function () {
 		Route::delete('payments/{payment}', [PaymentController::class, 'destroy'])->middleware('role:admin');
 		Route::get('payments/{payment}/receipt', [PaymentController::class, 'receipt']);
 		Route::patch('payments/{payment}/method', [PaymentController::class, 'changeMethod'])->middleware('role:admin');
+		Route::patch('payments/{payment}/tip', [PaymentController::class, 'updateTip'])->middleware('role:admin');
 
 		// GCash reconciliation (super_admin only via controller middleware)
 		Route::get('gcash-matching',              [GcashMatchingController::class, 'index']);

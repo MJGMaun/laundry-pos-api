@@ -47,7 +47,8 @@ class AccountController extends Controller implements HasMiddleware
 		$asOf = $request->input('as_of', now()->toDateString());
 
 		$accounts = array_map(
-			fn ($method) => $this->balances->buildAccount($branchId, $method, $asOf),
+			fn ($method) => $this->balances->buildAccount($branchId, $method, $asOf)
+				+ ['tips_held' => $this->tipsHeld($branchId, $method, $asOf)],
 			self::METHODS
 		);
 
@@ -81,7 +82,7 @@ class AccountController extends Controller implements HasMiddleware
 		}
 
 		$validated = $request->validate([
-			'type'        => 'required|in:opening,withdrawal,deposit,transfer',
+			'type'        => 'required|in:opening,withdrawal,deposit,transfer,tip_payout',
 			'method'      => 'required|in:cash,gcash',
 			// Only a transfer has a destination, and it must differ from the source.
 			'to_method'   => 'required_if:type,transfer|nullable|in:cash,gcash|different:method',
@@ -124,6 +125,31 @@ class AccountController extends Controller implements HasMiddleware
 		$movement->delete();
 
 		return $this->show($request);
+	}
+
+	/**
+	 * Tips collected into this account that have not been paid out to staff
+	 * yet. All-time on purpose: an opening balance seals the account's total,
+	 * not who the tips inside it belong to.
+	 */
+	private function tipsHeld(int $branchId, string $method, string $asOf): float
+	{
+		$collected = (float) DB::table('payments')
+			->join('orders', 'payments.order_id', '=', 'orders.id')
+			->where('orders.branch_id', $branchId)
+			->where('payments.method', $method)
+			->whereNull('payments.deleted_at')
+			->whereNull('orders.deleted_at')
+			->whereDate('payments.created_at', '<=', $asOf)
+			->sum('payments.tip_amount');
+
+		$paidOut = (float) AccountMovement::where('branch_id', $branchId)
+			->where('method', $method)
+			->where('type', 'tip_payout')
+			->whereDate('occurred_on', '<=', $asOf)
+			->sum('amount');
+
+		return round($collected - $paidOut, 2);
 	}
 
 	/**
@@ -177,7 +203,8 @@ class AccountController extends Controller implements HasMiddleware
 		$drawMonth = $this->monthExpression('occurred_on');
 		$withdrawals = DB::table('account_movements')
 			->where('branch_id', $branchId)
-			->where('type', 'withdrawal')
+			// Tip payouts are money taken out too, like withdrawals.
+			->whereIn('type', ['withdrawal', 'tip_payout'])
 			->whereNull('deleted_at')
 			->whereDate('occurred_on', '>=', $from)
 			->whereDate('occurred_on', '<=', $to)

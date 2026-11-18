@@ -76,6 +76,7 @@ class AccountBalanceService
 			->get();
 
 		$withdrawals = 0.0;
+		$tipPayouts  = 0.0;
 		$deposits    = 0.0;
 		$transferIn  = 0.0;
 		$transferOut = 0.0;
@@ -100,6 +101,8 @@ class AccountBalanceService
 
 			if ($movement->type === 'withdrawal') {
 				$withdrawals += $amount;
+			} elseif ($movement->type === 'tip_payout') {
+				$tipPayouts += $amount;
 			} elseif ($movement->type === 'deposit') {
 				$deposits += $amount;
 			}
@@ -113,6 +116,7 @@ class AccountBalanceService
 			+ $customerDeposits
 			- $expensesOut
 			- $withdrawals
+			- $tipPayouts
 			+ $deposits
 			+ $transferIn
 			- $transferOut;
@@ -128,6 +132,7 @@ class AccountBalanceService
 			'customer_deposits' => round($customerDeposits, 2),
 			'expenses'     => round($expensesOut, 2),
 			'withdrawals'  => round($withdrawals, 2),
+			'tip_payouts'  => round($tipPayouts, 2),
 			'deposits'     => round($deposits, 2),
 			'transfer_in'  => round($transferIn, 2),
 			'transfer_out' => round($transferOut, 2),

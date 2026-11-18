@@ -339,6 +339,33 @@ class PaymentController extends Controller implements HasMiddleware
         return response()->json(['data' => $payment->fresh()->load('methodChangedBy:id,name')]);
     }
 
+    // PATCH /api/payments/{payment}/tip (admin-only via route middleware)
+    // Adds or corrects the tip on an already-recorded payment — e.g. the
+    // customer sent extra on GCash and nobody entered it at the counter.
+    public function updateTip(Request $request, Payment $payment)
+    {
+        $this->ensureBranch($request, $payment);
+
+        $validated = $request->validate([
+            'tip_amount' => 'required|numeric|min:0|max:100000',
+        ]);
+
+        if ($payment->type !== 'payment' || ! in_array($payment->method, ['cash', 'gcash'], true)) {
+            abort(422, 'A tip can only be added to a cash or GCash payment.');
+        }
+
+        $payment->tip_amount = round((float) $validated['tip_amount'], 2);
+        // What the GCash app shows for this payment changed, so a previous
+        // match no longer proves anything.
+        if ($payment->isDirty('tip_amount')) {
+            $payment->matched_at = null;
+            $payment->matched_by = null;
+        }
+        $payment->save();
+
+        return response()->json(['data' => $payment->fresh()]);
+    }
+
     private function ensureBranch(Request $request, Payment $payment): Order
     {
         $order = $payment->order;
