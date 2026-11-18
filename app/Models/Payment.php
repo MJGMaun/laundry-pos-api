@@ -13,6 +13,7 @@ class Payment extends Model
 	protected $fillable = [
 		'order_id',
 		'amount',
+		'tip_amount',
 		'method',
 		'type',
 		'tendered',
@@ -34,6 +35,7 @@ class Payment extends Model
 
 	protected $casts = [
 		'amount' => 'decimal:2',
+		'tip_amount' => 'decimal:2',
 		'tendered' => 'decimal:2',
 		'change_amount' => 'decimal:2',
 		'matched_at' => 'datetime',

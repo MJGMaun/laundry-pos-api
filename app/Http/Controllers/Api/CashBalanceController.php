@@ -93,6 +93,24 @@ class CashBalanceController extends Controller implements HasMiddleware
             }
         }
 
+        // Tips: extra money customers sent on top of the order. In the account,
+        // not in sales — shown as their own line.
+        $tipRows = $this->scopeBranch(
+            DB::table('payments')->join('orders', 'payments.order_id', '=', 'orders.id'),
+            $branchId,
+            'orders.branch_id'
+        )
+            ->whereDate('payments.created_at', '>=', $dateFrom)
+            ->whereDate('payments.created_at', '<=', $dateTo)
+            ->whereNull('payments.deleted_at')
+            ->whereNull('orders.deleted_at')
+            ->where('payments.tip_amount', '>', 0)
+            ->select('payments.method', DB::raw('SUM(payments.tip_amount) as total'))
+            ->groupBy('payments.method')
+            ->pluck('total', 'method');
+        $cashTips  = round((float) ($tipRows['cash'] ?? 0), 2);
+        $gcashTips = round((float) ($tipRows['gcash'] ?? 0), 2);
+
         // Customer deposits (prepaid balance): real money received, so they
         // count toward the drawer and GCash, but not toward sales. Voided
         // deposits net out through their reversal rows (same method).
@@ -164,6 +182,7 @@ class CashBalanceController extends Controller implements HasMiddleware
                 'payments.method',
                 'payments.type',
                 'payments.amount',
+                'payments.tip_amount',
                 'payments.created_at',
                 'orders.id as order_id',
                 'orders.order_number',
@@ -205,9 +224,9 @@ class CashBalanceController extends Controller implements HasMiddleware
 
         $cashNet         = round($net['cash'], 2);
         $gcashNet        = round($net['gcash'], 2);
-        $totalInDrawer   = round($startingBalance + $cashNet + $cashDeposits - $cashExpenses, 2);
+        $totalInDrawer   = round($startingBalance + $cashNet + $cashDeposits + $cashTips - $cashExpenses, 2);
         $toRemitCash     = round($totalInDrawer - $startingBalance, 2);
-        $toRemitGcash    = round($gcashNet + $gcashDeposits - $gcashExpenses, 2);
+        $toRemitGcash    = round($gcashNet + $gcashDeposits + $gcashTips - $gcashExpenses, 2);
 
         return response()->json([
             'date'             => $dateFrom,
@@ -221,6 +240,8 @@ class CashBalanceController extends Controller implements HasMiddleware
             'maya_in'          => round($net['maya'], 2),
             'card_in'          => round($net['card'], 2),
             'cash_deposits'    => $cashDeposits,
+            'cash_tips'        => $cashTips,
+            'gcash_tips'       => $gcashTips,
             'gcash_deposits'   => $gcashDeposits,
             'deposits'         => $deposits,
             'paid_from_balance'=> round($net['balance'], 2),

@@ -54,8 +54,9 @@ class GcashMatchingController extends Controller implements HasMiddleware
 
 		$gcash = (clone $base)->where('payments.method', 'gcash');
 
-		$all = (clone $gcash)->get(['payments.type', 'payments.amount', 'payments.matched_at', 'payments.reference_number', 'payments.receipt_path']);
-		$signed = fn ($p) => ($p->type === 'refund' ? -1 : 1) * (float) $p->amount;
+		$all = (clone $gcash)->get(['payments.type', 'payments.amount', 'payments.tip_amount', 'payments.matched_at', 'payments.reference_number', 'payments.receipt_path']);
+		// What the GCash app shows: the amount plus any tip sent with it.
+		$signed = fn ($p) => $p->type === 'refund' ? -(float) $p->amount : (float) $p->amount + (float) $p->tip_amount;
 
 		$summary = [
 			'total'           => round($all->sum($signed), 2),
@@ -64,6 +65,7 @@ class GcashMatchingController extends Controller implements HasMiddleware
 			'count'           => $all->count(),
 			'matched_count'   => $all->whereNotNull('matched_at')->count(),
 			'unmatched_count' => $all->whereNull('matched_at')->count(),
+			'tips'            => round((float) $all->sum('tip_amount'), 2),
 			'no_proof_count'  => $all->filter(fn ($p) => strlen(trim((string) $p->reference_number)) < 4 && ! $p->receipt_path)->count(),
 		];
 
@@ -119,6 +121,7 @@ class GcashMatchingController extends Controller implements HasMiddleware
 			'payments.method',
 			'payments.type',
 			'payments.amount',
+			'payments.tip_amount',
 			'payments.reference_number',
 			'payments.receipt_path',
 			'payments.matched_at',

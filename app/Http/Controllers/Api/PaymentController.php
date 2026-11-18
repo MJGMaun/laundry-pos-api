@@ -55,6 +55,8 @@ class PaymentController extends Controller implements HasMiddleware
             'payment_date'     => 'nullable|date|before_or_equal:today',
             // Photo of the GCash receipt — the alternative to typing the reference.
             'receipt'          => 'nullable|image|max:10240',
+            // Extra the customer sent on top of the amount applied to the order.
+            'tip_amount'       => 'nullable|numeric|min:0|max:100000',
         ]);
 
         // Only admins may backdate a payment; silently ignore for other roles.
@@ -76,6 +78,11 @@ class PaymentController extends Controller implements HasMiddleware
             }
         }
 
+        $tip = round((float) ($validated['tip_amount'] ?? 0), 2);
+        if ($tip > 0 && ($type !== 'payment' || $method === 'balance')) {
+            abort(422, 'A tip can only be added to a cash or GCash payment.');
+        }
+
         // GCash needs proof that can be matched against the GCash app later:
         // at least the last 4 characters of the reference, or a receipt photo.
         if ($type === 'payment' && $method === 'gcash' && ! $request->hasFile('receipt')
@@ -91,7 +98,7 @@ class PaymentController extends Controller implements HasMiddleware
         }
 
 
-        $payment = DB::transaction(function () use ($validated, $order, $type, $amount, $request) {
+        $payment = DB::transaction(function () use ($validated, $order, $type, $amount, $request, $tip) {
             // For refunds: cannot refund more than what was actually paid (net)
             if ($type === 'refund') {
                 $existingPayments = $order->payments;
@@ -123,6 +130,7 @@ class PaymentController extends Controller implements HasMiddleware
                 'method'           => $validated['method'],
                 'type'             => $type,
                 'amount'           => $amount,
+                'tip_amount'       => $tip,
                 'tendered'         => $validated['tendered'] ?? null,
                 'change_amount'    => $changeAmount,
                 'reference_number' => isset($validated['reference_number']) ? trim($validated['reference_number']) : null,
@@ -228,7 +236,8 @@ class PaymentController extends Controller implements HasMiddleware
         $totals = (clone $query)
             ->selectRaw("
                 SUM(CASE WHEN payments.type = 'payment' THEN payments.amount ELSE 0 END) as total_paid,
-                SUM(CASE WHEN payments.type = 'refund' THEN payments.amount ELSE 0 END) as total_refunds
+                SUM(CASE WHEN payments.type = 'refund' THEN payments.amount ELSE 0 END) as total_refunds,
+                SUM(payments.tip_amount) as total_tips
             ")
             ->first();
 
@@ -239,6 +248,7 @@ class PaymentController extends Controller implements HasMiddleware
                 'payments.method',
                 'payments.type',
                 'payments.amount',
+                'payments.tip_amount',
                 'payments.reference_number',
                 'payments.created_at',
                 'orders.id as order_id',
@@ -257,6 +267,7 @@ class PaymentController extends Controller implements HasMiddleware
                 'total_paid'    => $totalPaid,
                 'total_refunds' => $totalRefunds,
                 'net'           => round($totalPaid - $totalRefunds, 2),
+                'total_tips'    => round((float) ($totals->total_tips ?? 0), 2),
             ],
         ] + $payments->toArray());
     }
