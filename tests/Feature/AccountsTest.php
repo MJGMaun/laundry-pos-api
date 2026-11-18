@@ -45,6 +45,7 @@ function accountsPaidOrder(Branch $branch, Service $service, Customer $customer,
         'amount'       => 100,
         'tendered'     => 100,
         'payment_date' => $date,
+        'reference_number' => $method === 'gcash' ? '1234' : null,
     ], ['X-Branch-Id' => $branch->id])->assertCreated();
 }
 
